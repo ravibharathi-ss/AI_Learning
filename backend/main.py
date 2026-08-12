@@ -1,6 +1,7 @@
 import os
 import uvicorn
-from fastapi import FastAPI, Depends, HTTPException, status
+import json
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -9,7 +10,8 @@ from typing import List
 import models
 import schemas
 from database import engine, get_db
-from services.openai_service import OpenAiService
+from services.ollama_service import OllamaService
+from services.rag_service import RagService
 
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
@@ -25,11 +27,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-openai_service = OpenAiService()
+ollama_service = OllamaService()
+rag_service = RagService()
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "healthy", "mock_mode": openai_service.client is None}
+    return {"status": "healthy", "mode": "ollama", "model": ollama_service.model_name}
 
 # 1. Create a new conversation
 @app.post("/api/conversations", response_model=schemas.ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -129,10 +132,28 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
         role = "user" if msg.sender == "user" else "assistant"
         openai_history.append({"role": role, "content": msg.content})
 
+    # Retrieve relevant context from RAG
+    rag_context = ""
+    retrieved_chunks = []
+    if len(history_messages) > 0:
+        latest_user_query = history_messages[-1].content
+        try:
+            retrieved_chunks = rag_service.retrieve(db, latest_user_query, limit=3)
+            if retrieved_chunks:
+                rag_context = "\n\n".join(
+                    [f"Source [{chunk['filename']}]: {chunk['content']}" for chunk in retrieved_chunks]
+                )
+        except Exception as e:
+            print(f"RAG Retrieval Error: {str(e)}")
+
     async def event_generator():
+        # First send the retrieved sources to the frontend
+        if retrieved_chunks:
+            yield f"data: [SOURCES]{json.dumps(retrieved_chunks)}\n\n"
+
         accumulated_response = []
         try:
-            async for chunk in openai_service.get_chat_stream(conv.agent_type, openai_history):
+            async for chunk in ollama_service.get_chat_stream(conv.agent_type, openai_history, rag_context=rag_context):
                 accumulated_response.append(chunk)
                 # SSE data needs to be prefixed with 'data: ' and followed by double newlines
                 yield f"data: {chunk}\n\n"
@@ -142,7 +163,7 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
             yield f"data: {error_msg}\n\n"
             accumulated_response.append(error_msg)
         finally:
-            # Update database with the full content
+            # Update database with the full content and sources references
             full_text = "".join(accumulated_response)
             # Fetch a fresh session to ensure thread safety in finally block
             from database import SessionLocal
@@ -151,6 +172,8 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                 db_bot_msg = fresh_db.query(models.Message).filter(models.Message.id == message_id).first()
                 if db_bot_msg:
                     db_bot_msg.content = full_text
+                    if retrieved_chunks:
+                        db_bot_msg.sources = json.dumps(retrieved_chunks)
                     fresh_db.commit()
             except Exception as e:
                 print(f"Error saving streamed response: {str(e)}")
@@ -189,6 +212,47 @@ def submit_feedback(message_id: int, feedback_in: schemas.FeedbackBase, db: Sess
     db.commit()
     db.refresh(db_fb)
     return db_fb
+
+# 8. Knowledge Base / Document upload endpoints
+@app.post("/api/documents", response_model=schemas.DocumentResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".txt", ".md", ".json"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Unsupported file type. Only .txt, .md, and .json files are supported."
+        )
+    try:
+        contents = await file.read()
+        text_content = contents.decode("utf-8")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read file contents: {str(e)}"
+        )
+    
+    try:
+        db_doc = rag_service.index_document(db, file.filename, text_content)
+        return db_doc
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to index document: {str(e)}"
+        )
+
+@app.get("/api/documents", response_model=List[schemas.DocumentResponse])
+def get_documents(db: Session = Depends(get_db)):
+    documents = db.query(models.Document).order_by(models.Document.uploaded_at.desc()).all()
+    return documents
+
+@app.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(document_id: str, db: Session = Depends(get_db)):
+    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    db.delete(doc)
+    db.commit()
+    return
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")

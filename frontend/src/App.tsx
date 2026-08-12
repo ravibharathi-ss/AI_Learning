@@ -17,7 +17,10 @@ import {
   Wrench, 
   Sparkles,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  BookOpen,
+  Upload,
+  FileText
 } from 'lucide-react';
 
 interface Feedback {
@@ -32,6 +35,7 @@ interface Message {
   sender: 'user' | 'bot';
   content: string;
   timestamp: string;
+  sources?: Array<{ id: number; filename: string; content: string; score: number }> | null;
   feedback?: Feedback | null;
 }
 
@@ -71,11 +75,85 @@ export default function App() {
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isInitializingRef = useRef(false);
+
+  // RAG / Knowledge Base State
+  const [currentView, setCurrentView] = useState<'chat' | 'kb'>('chat');
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
+
+  const toggleSources = (msgId: number) => {
+    setExpandedSources(prev => ({ ...prev, [msgId]: !prev[msgId] }));
+  };
+
+  const getSourcesArray = (sources: any) => {
+    if (!sources) return null;
+    if (Array.isArray(sources)) return sources;
+    if (typeof sources === 'string') {
+      try {
+        return JSON.parse(sources);
+      } catch (e) {
+        console.error('Failed to parse sources JSON:', e);
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const fetchDocuments = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/documents`);
+      if (res.ok) {
+        const data = await res.json();
+        setDocuments(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch documents:', e);
+    }
+  };
+
+  const handleUploadDocument = async (file: File) => {
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(`${API_BASE}/documents`, {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        fetchDocuments();
+      } else {
+        const err = await res.json();
+        alert(err.detail || 'Upload failed');
+      }
+    } catch (e) {
+      console.error('Document upload failed:', e);
+      alert('Failed to upload document');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/documents/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchDocuments();
+      }
+    } catch (e) {
+      console.error('Failed to delete document:', e);
+    }
+  };
 
   // Load initial data
   useEffect(() => {
     checkBackendHealth();
     fetchConversations();
+    fetchDocuments();
     
     // Initialize Web Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -138,13 +216,22 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setConversations(data);
+        if (data.length > 0) {
+          loadConversation(data[0].id, data);
+        } else {
+          // Guard against StrictMode or concurrent double-invocation
+          if (!isInitializingRef.current) {
+            isInitializingRef.current = true;
+            await handleStartChat();
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to fetch conversations:', e);
     }
   };
 
-  const loadConversation = async (id: string) => {
+  const loadConversation = async (id: string, currentConvs?: Conversation[]) => {
     try {
       setActiveConvId(id);
       // Stop speech if speaking
@@ -155,8 +242,10 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
+        
         // Find conversation details
-        const conv = conversations.find(c => c.id === id);
+        const convList = currentConvs || conversations;
+        const conv = convList.find(c => c.id === id);
         if (conv) {
           setSelectedAgent(conv.agent_type);
         }
@@ -166,19 +255,13 @@ export default function App() {
     }
   };
 
-  const handleStartChat = async (agent: 'general' | 'technical' | 'billing') => {
+  const handleStartChat = async (agent: 'general' | 'technical' | 'billing' = 'general') => {
     try {
-      const agentNames = {
-        general: 'General Support',
-        technical: 'Tech Support Helpdesk',
-        billing: 'Billing & Invoice Support'
-      };
-
       const res = await fetch(`${API_BASE}/conversations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: `${agentNames[agent]} - ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+          title: `Chat Session`,
           agent_type: agent
         })
       });
@@ -207,10 +290,16 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/conversations/${convIdToDelete}`, { method: 'DELETE' });
       if (res.ok) {
-        setConversations(prev => prev.filter(c => c.id !== convIdToDelete));
+        const remaining = conversations.filter(c => c.id !== convIdToDelete);
+        setConversations(remaining);
         if (activeConvId === convIdToDelete) {
-          setActiveConvId(null);
-          setMessages([]);
+          if (remaining.length > 0) {
+            loadConversation(remaining[0].id, remaining);
+          } else {
+            setActiveConvId(null);
+            setMessages([]);
+            handleStartChat();
+          }
         }
       }
     } catch (e) {
@@ -282,21 +371,36 @@ export default function App() {
         if (event.data === '[DONE]') {
           eventSource.close();
           setIsGenerating(false);
-          // Refetch conversations to update title if it changed
           fetchConversations();
           return;
         }
 
-        // Standard chunk processing
         const chunk = event.data;
-        setMessages(prev => 
-          prev.map(m => {
-            if (m.id === bot_message.id) {
-              return { ...m, content: m.content + chunk };
-            }
-            return m;
-          })
-        );
+        if (chunk.startsWith('[SOURCES]')) {
+          try {
+            const sourcesJson = chunk.replace('[SOURCES]', '');
+            const parsedSources = JSON.parse(sourcesJson);
+            setMessages(prev =>
+              prev.map(m => {
+                if (m.id === bot_message.id) {
+                  return { ...m, sources: parsedSources };
+                }
+                return m;
+              })
+            );
+          } catch (e) {
+            console.error('Error parsing sources from stream:', e);
+          }
+        } else {
+          setMessages(prev => 
+            prev.map(m => {
+              if (m.id === bot_message.id) {
+                return { ...m, content: m.content + chunk };
+              }
+              return m;
+            })
+          );
+        }
       };
 
       eventSource.onerror = (error) => {
@@ -526,10 +630,10 @@ export default function App() {
         <div className="sidebar-header">
           <div className="sidebar-brand-wrapper">
             <div className="sidebar-logo">
-              <Sparkles style={{ color: '#000000' }} size={20} />
+              <Bot style={{ color: '#000000' }} size={20} />
             </div>
             <div>
-              <h2 className="sidebar-brand-title">SupportAI</h2>
+              <h2 className="sidebar-brand-title">AI Assistant</h2>
               <span className="sidebar-brand-status">
                 <span className="status-dot-pulse"></span>
                 {backendHealth?.mock_mode ? 'Offline' : 'Online'}
@@ -538,12 +642,33 @@ export default function App() {
           </div>
           
           <button 
-            onClick={() => setActiveConvId(null)}
+            onClick={() => handleStartChat()}
             className="btn-3d btn-3d-secondary"
             style={{ padding: '8px', borderRadius: '10px' }}
-            title="New Conversation"
+            title="New Chat Session"
           >
             <Plus size={16} />
+          </button>
+        </div>
+
+        {/* View Toggle Tabs */}
+        <div style={{ display: 'flex', gap: '6px', padding: '8px 12px 12px 12px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+          <button
+            onClick={() => setCurrentView('chat')}
+            className={`btn-3d ${currentView === 'chat' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
+            style={{ flex: 1, padding: '6px 12px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            <Bot size={13} /> Chat
+          </button>
+          <button
+            onClick={() => {
+              setCurrentView('kb');
+              fetchDocuments();
+            }}
+            className={`btn-3d ${currentView === 'kb' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
+            style={{ flex: 1, padding: '6px 12px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+          >
+            <BookOpen size={13} /> Knowledge Base
           </button>
         </div>
 
@@ -554,25 +679,24 @@ export default function App() {
           </div>
           {conversations.length === 0 ? (
             <div style={{ fontSize: '12px', color: '#525252', textAlign: 'center', padding: '30px 10px', lineHeight: '1.6' }}>
-              No chats found.<br />Launch an agent to start!
+              No chats found.<br />Start a new session!
             </div>
           ) : (
             <div className="conv-list">
               {conversations.map(c => {
                 const isActive = activeConvId === c.id;
-                const agentIcon = c.agent_type === 'technical' ? <Wrench size={13} style={{ color: '#E5E5E5' }} /> :
-                                  c.agent_type === 'billing' ? <CreditCard size={13} style={{ color: '#A3A3A3' }} /> :
-                                  <HelpCircle size={13} style={{ color: '#FFFFFF' }} />;
-
                 return (
                   <div
                     key={c.id}
-                    onClick={() => loadConversation(c.id)}
-                    className={`conv-item-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => {
+                      setCurrentView('chat');
+                      loadConversation(c.id);
+                    }}
+                    className={`conv-item-btn ${isActive && currentView === 'chat' ? 'active' : ''}`}
                   >
                     <div className="conv-item-left">
                       <div className="conv-item-icon">
-                        {agentIcon}
+                        <Bot size={13} style={{ color: '#FFFFFF' }} />
                       </div>
                       <span className="conv-item-text">{c.title}</span>
                     </div>
@@ -614,213 +738,239 @@ export default function App() {
       <main className="chat-main">
         
         {/* Active Chat Header */}
-        {activeConvId && (
+        {currentView === 'kb' ? (
           <div className="chat-header">
             <div className="chat-header-left">
               <div className="chat-header-avatar">
-                {selectedAgent === 'technical' ? <Wrench size={18} style={{ color: '#E5E5E5' }} /> :
-                 selectedAgent === 'billing' ? <CreditCard size={18} style={{ color: '#A3A3A3' }} /> :
-                 <HelpCircle size={18} style={{ color: '#FFFFFF' }} />}
+                <BookOpen size={18} style={{ color: '#FFFFFF' }} />
               </div>
               <div>
-                <h3 className="chat-header-title">{agents[selectedAgent].title} Desk</h3>
-                <span className="chat-header-subtitle">{agents[selectedAgent].desc}</span>
+                <h3 className="chat-header-title">Knowledge Base</h3>
+                <span className="chat-header-subtitle">Manage documents for local RAG query indexing</span>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span className="chat-header-badge" style={agents[selectedAgent].badgeColor}>
-                Support Active
-              </span>
-              <button 
-                onClick={(e) => handleDeleteConversation(e, activeConvId)}
-                className="btn-3d btn-3d-secondary"
-                style={{ 
-                  padding: '6px 10px', 
-                  borderRadius: '8px', 
-                  color: '#EF4444', 
-                  borderColor: 'rgba(239, 68, 68, 0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px'
-                }}
-                title="Delete Conversation"
-              >
-                <Trash2 size={13} /> Delete
-              </button>
             </div>
           </div>
-        )}
-
-        {/* Message Window */}
-        <div className="chat-scroll-container">
-          <div className="chat-content-width">
-            {!activeConvId ? (
-              /* 3D LANDING HERO PAGE */
-              <div className="landing-container">
-                <div className="landing-hero">
-                  <div className="landing-badge">
-                    <Sparkles size={11} /> Classy Monochromatic UI
-                  </div>
-                  <h1 className="landing-title">
-                    Empowering user answers with <br />
-                    <span className="landing-title-gradient">intelligent AI Desks.</span>
-                  </h1>
-                  <p className="landing-desc">
-                    Choose one of the specialized support representatives below to launch an optimized 3D chat workspace designed to solve your accounts, invoices, or technical systems issues.
-                  </p>
+        ) : (
+          activeConvId && (
+            <div className="chat-header">
+              <div className="chat-header-left">
+                <div className="chat-header-avatar">
+                  <Bot size={18} style={{ color: '#FFFFFF' }} />
                 </div>
-
-                {/* 3D Card Selection Grid */}
-                <div className="landing-grid">
-                  {(Object.keys(agents) as Array<'general' | 'technical' | 'billing'>).map(key => {
-                    const agent = agents[key];
-                    return (
-                      <div 
-                        key={key}
-                        onClick={() => handleStartChat(key)}
-                        className={`agent-card-3d ${agent.classKey}`}
-                      >
-                        <div className="agent-card-header">
-                          <div className="agent-card-icon-container">
-                            {agent.icon}
-                          </div>
-                          <div>
-                            <h3 className="agent-card-title">{agent.title}</h3>
-                            <p className="agent-card-desc">{agent.desc}</p>
-                          </div>
-                        </div>
-
-                        <div className="agent-card-action">
-                          <span>Initialize Desk</span>
-                          <ArrowRight size={14} className="agent-card-action-icon" />
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div>
+                  <h3 className="chat-header-title">AI Assistant</h3>
+                  <span className="chat-header-subtitle">Ask questions and get instant answers</span>
                 </div>
               </div>
-            ) : (
-              /* CONVERSATION THREAD */
-              <>
-                {messages.length === 0 ? (
-                  /* Welcome view with interactive suggestion chips */
-                  <div className="chat-welcome-container">
-                    <div className="welcome-avatar-wrapper">
-                      {selectedAgent === 'technical' ? <Wrench size={22} style={{ color: '#E5E5E5' }} /> :
-                       selectedAgent === 'billing' ? <CreditCard size={22} style={{ color: '#A3A3A3' }} /> :
-                       <HelpCircle size={22} style={{ color: '#FFFFFF' }} />}
-                    </div>
-                    <div>
-                      <h3 className="welcome-title">Initialize {agents[selectedAgent].title} Desk</h3>
-                      <p className="welcome-desc">
-                        Interact with the assistant by selecting a prompt category below or write a custom prompt to start the session.
-                      </p>
-                    </div>
 
-                    <div className="welcome-suggestions-list">
-                      {agents[selectedAgent].suggestions.map((s, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSendMessage(s)}
-                          className="suggestion-chip"
-                        >
-                          💡 "{s}"
-                        </button>
-                      ))}
-                    </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button 
+                  onClick={(e) => handleDeleteConversation(e, activeConvId)}
+                  className="btn-3d btn-3d-secondary"
+                  style={{ 
+                    padding: '6px 10px', 
+                    borderRadius: '8px', 
+                    color: '#EF4444', 
+                    borderColor: 'rgba(239, 68, 68, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px'
+                  }}
+                  title="Delete Conversation"
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Message Window / KB Window */}
+        <div className="chat-scroll-container">
+          <div className="chat-content-width">
+            {currentView === 'kb' ? (
+              /* KNOWLEDGE BASE VIEW */
+              <div className="kb-container animate-scale-in" style={{ padding: '24px 0' }}>
+                <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>Upload Reference Document</h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#A3A3A3', lineHeight: '1.5' }}>
+                    Select a text (`.txt`), markdown (`.md`), or JSON (`.json`) file. Its content will be chunked and indexed into the local SQLite embedding database automatically.
+                  </p>
+                  
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <input 
+                      type="file" 
+                      accept=".txt,.md,.json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          handleUploadDocument(file);
+                        }
+                      }}
+                      style={{ display: 'none' }}
+                      id="kb-file-upload-input"
+                    />
+                    <label 
+                      htmlFor="kb-file-upload-input"
+                      className="btn-3d btn-3d-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      <Upload size={16} /> Select & Upload File
+                    </label>
+                    
+                    {isUploading && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#A3A3A3' }}>
+                        <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Indexing file...</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>Indexed Documents</h4>
+                {documents.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#525252', fontSize: '13px', background: 'rgba(255, 255, 255, 0.01)', border: '1px dashed rgba(255, 255, 255, 0.05)', borderRadius: '12px' }}>
+                    No documents indexed yet. Upload a document to start using RAG!
                   </div>
                 ) : (
-                  /* Message logs mapping */
-                  messages.map((m) => {
-                    const isUser = m.sender === 'user';
-                    const botRibbonClass = selectedAgent === 'technical' ? 'ribbon-technical' :
-                                           selectedAgent === 'billing' ? 'ribbon-billing' :
-                                           'ribbon-general';
-
-                    return (
-                      <div 
-                        key={m.id} 
-                        className={`message-row ${isUser ? 'user' : 'bot'}`}
-                      >
-                        {/* AI avatar */}
-                        {!isUser && (
-                          <div className="message-avatar">
-                            <Bot size={15} style={{ color: '#000000' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {documents.map((doc) => (
+                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyItems: 'space-between', padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <FileText size={18} style={{ color: '#3B82F6' }} />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '600', color: '#E2E8F0' }}>{doc.filename}</span>
+                            <span style={{ fontSize: '11px', color: '#525252', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
                           </div>
-                        )}
+                        </div>
+                        <button
+                          onClick={() => handleDeleteDocument(doc.id)}
+                          className="conv-item-delete-btn"
+                          style={{ marginLeft: 'auto', padding: '6px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#EF4444', background: 'rgba(239, 68, 68, 0.05)' }}
+                          title="Delete Document"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              !activeConvId ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#A3A3A3', gap: '12px', padding: '100px 0' }}>
+                  <RefreshCw size={24} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>Initializing chat session...</span>
+                </div>
+              ) : (
+                /* CONVERSATION THREAD */
+                <>
+                  {messages.length === 0 ? (
+                    /* Welcome view */
+                    <div className="chat-welcome-container">
+                      <div className="welcome-avatar-wrapper">
+                        <Bot size={22} style={{ color: '#FFFFFF' }} />
+                      </div>
+                      <div>
+                        <h3 className="welcome-title">AI Assistant</h3>
+                        <p className="welcome-desc">
+                          Hello! I am your AI Assistant. How can I help you today? Ask me any questions, and I will do my best to answer.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Message logs mapping */
+                    messages.map((m) => {
+                      const isUser = m.sender === 'user';
+                      const botRibbonClass = 'ribbon-general';
 
-                        <div className="message-bubble-wrapper">
-                          {/* Bubble Container */}
-                          <div className={`message-bubble ${isUser ? '' : botRibbonClass}`}>
-                            {isUser ? (
-                              <p style={{ whiteSpace: 'pre-wrap' }}>{m.content}</p>
-                            ) : (
-                              renderMessageContent(m.content, m.id)
+                      return (
+                        <div 
+                          key={m.id} 
+                          className={`message-row ${isUser ? 'user' : 'bot'}`}
+                        >
+                          {/* AI avatar */}
+                          {!isUser && (
+                            <div className="message-avatar">
+                              <Bot size={15} style={{ color: '#000000' }} />
+                            </div>
+                          )}
+
+                          <div className="message-bubble-wrapper">
+                            {/* Bubble Container */}
+                            <div className={`message-bubble ${isUser ? '' : botRibbonClass}`}>
+                              {isUser ? (
+                                <p style={{ whiteSpace: 'pre-wrap' }}>{m.content}</p>
+                              ) : (
+                                renderMessageContent(m.content, m.id)
+                              )}
+                            </div>
+
+
+
+
+                            {/* Bot Message Actions */}
+                            {!isUser && m.content && (
+                              <div className="message-meta">
+                                <div className="message-meta-left">
+                                  <span>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <button 
+                                    onClick={() => toggleSpeech(m)}
+                                    className="meta-action-btn"
+                                    title={speakingMessageId === m.id ? 'Stop audio' : 'Listen'}
+                                  >
+                                    {speakingMessageId === m.id ? <VolumeX size={12} className="stop" /> : <Volume2 size={12} />}
+                                    {speakingMessageId === m.id ? 'Stop' : 'Listen'}
+                                  </button>
+                                </div>
+
+                                {/* Feedback Ratings */}
+                                <div className="feedback-group">
+                                  <button
+                                    onClick={() => handleFeedback(m.id, 'thumbs_up')}
+                                    className={`feedback-btn ${m.feedback?.rating === 'thumbs_up' ? 'up-active' : ''}`}
+                                    title="Helpful response"
+                                  >
+                                    <ThumbsUp size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleFeedback(m.id, 'thumbs_down')}
+                                    className={`feedback-btn ${m.feedback?.rating === 'thumbs_down' ? 'down-active' : ''}`}
+                                    title="Unhelpful response"
+                                  >
+                                    <ThumbsDown size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* User Timestamp */}
+                            {isUser && (
+                              <div style={{ textAlign: 'right', fontSize: '10px', color: '#525252', paddingRight: '4px', fontWeight: '500' }}>
+                                {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
                             )}
                           </div>
 
-                          {/* Bot Message Actions */}
-                          {!isUser && m.content && (
-                            <div className="message-meta">
-                              <div className="message-meta-left">
-                                <span>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                <button 
-                                  onClick={() => toggleSpeech(m)}
-                                  className="meta-action-btn"
-                                  title={speakingMessageId === m.id ? 'Stop audio' : 'Listen'}
-                                >
-                                  {speakingMessageId === m.id ? <VolumeX size={12} className="stop" /> : <Volume2 size={12} />}
-                                  {speakingMessageId === m.id ? 'Stop' : 'Listen'}
-                                </button>
-                              </div>
-
-                              {/* Feedback Ratings */}
-                              <div className="feedback-group">
-                                <button
-                                  onClick={() => handleFeedback(m.id, 'thumbs_up')}
-                                  className={`feedback-btn ${m.feedback?.rating === 'thumbs_up' ? 'up-active' : ''}`}
-                                  title="Helpful response"
-                                >
-                                  <ThumbsUp size={12} />
-                                </button>
-                                <button
-                                  onClick={() => handleFeedback(m.id, 'thumbs_down')}
-                                  className={`feedback-btn ${m.feedback?.rating === 'thumbs_down' ? 'down-active' : ''}`}
-                                  title="Unhelpful response"
-                                >
-                                  <ThumbsDown size={12} />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* User Timestamp */}
+                          {/* User avatar */}
                           {isUser && (
-                            <div style={{ textAlign: 'right', fontSize: '10px', color: '#525252', paddingRight: '4px', fontWeight: '500' }}>
-                              {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <div className="message-avatar">
+                              <User size={15} style={{ color: '#FFFFFF' }} />
                             </div>
                           )}
                         </div>
-
-                        {/* User avatar */}
-                        {isUser && (
-                          <div className="message-avatar">
-                            <User size={15} style={{ color: '#FFFFFF' }} />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </>
+                      );
+                    })
+                  )}
+                </>
+              )
             )}
           </div>
         </div>
 
         {/* 3D FLOATING INPUT PANEL */}
-        {activeConvId && (
+        {activeConvId && currentView === 'chat' && (
           <div className="input-panel-floating">
             <div className="input-container-row">
               

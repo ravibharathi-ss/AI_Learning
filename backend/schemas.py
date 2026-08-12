@@ -30,6 +30,7 @@ class MessageResponse(MessageBase):
     id: int
     conversation_id: str
     timestamp: datetime
+    sources: Optional[str] = None
     feedback: Optional[FeedbackResponse] = None
 
     class Config:
@@ -54,6 +55,15 @@ class ConversationResponse(ConversationBase):
 class ConversationListItem(ConversationBase):
     id: str
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Document schemas
+class DocumentResponse(BaseModel):
+    id: str
+    filename: str
+    uploaded_at: datetime
 
     class Config:
         from_attributes = True
