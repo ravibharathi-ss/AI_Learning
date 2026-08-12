@@ -4,7 +4,7 @@ backend/__pycache__/
 *.pyc
 
 # Local databases
-backend/chatbot.db
+chatbot.db
 
 # Sensitive configuration files (contains API keys)
 backend/.env
