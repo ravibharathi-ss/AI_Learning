@@ -1,0 +1,25 @@
+# Python virtual environment
+backend/.venv/
+backend/__pycache__/
+*.pyc
+
+# Local databases
+backend/chatbot.db
+
+# Sensitive configuration files (contains API keys)
+backend/.env
+
+# Node dependencies and build output
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+
+# IDE files
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
