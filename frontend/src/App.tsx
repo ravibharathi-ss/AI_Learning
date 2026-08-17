@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import ThreeBackground from './components/ThreeBackground';
 import { 
   Plus, 
   Trash2, 
@@ -15,12 +16,12 @@ import {
   HelpCircle, 
   CreditCard, 
   Wrench, 
-  Sparkles,
-  ArrowRight,
   RefreshCw,
   BookOpen,
   Upload,
-  FileText
+  FileText,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface Feedback {
@@ -55,6 +56,7 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<'general' | 'technical' | 'billing'>('general');
   const [backendHealth, setBackendHealth] = useState<{ status: string; mock_mode: boolean } | null>(null);
   
@@ -72,8 +74,11 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [convIdToDelete, setConvIdToDelete] = useState<string | null>(null);
 
+  // Agent selector modal state for starting a new chat from sidebar
+  const [showAgentModal, setShowAgentModal] = useState(false);
+
   // Refs
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isInitializingRef = useRef(false);
 
@@ -149,6 +154,106 @@ export default function App() {
     }
   };
 
+  const loadConversation = async (id: string, currentConvs?: Conversation[]) => {
+    try {
+      setIsLoadingMessages(true);
+      setActiveConvId(id);
+      window.speechSynthesis?.cancel();
+      setSpeakingMessageId(null);
+      
+      const res = await fetch(`${API_BASE}/conversations/${id}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data);
+        
+        const convList = currentConvs || conversations;
+        const conv = convList.find(c => c.id === id);
+        if (conv) {
+          setSelectedAgent(conv.agent_type);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load messages:', e);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  const handleStartChat = async (agent: 'general' | 'technical' | 'billing' = 'general', initialPrompt?: string) => {
+    const titles = {
+      general: 'General Support Session',
+      technical: 'Tech Helpdesk Session',
+      billing: 'Billing & Invoice Session'
+    };
+
+    try {
+      setIsLoadingMessages(true);
+      const res = await fetch(`${API_BASE}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: titles[agent],
+          agent_type: agent
+        })
+      });
+
+      if (res.ok) {
+        const newConv = await res.json();
+        setConversations(prev => [newConv, ...prev]);
+        setActiveConvId(newConv.id);
+        setSelectedAgent(agent);
+        setMessages([]);
+        setShowAgentModal(false);
+
+        if (initialPrompt) {
+          setTimeout(() => {
+            handleSendMessageWithConvId(newConv.id, initialPrompt);
+          }, 100);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to create conversation:', e);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
+
+  const fetchConversations = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/conversations`);
+      if (res.ok) {
+        const data = await res.json();
+        setConversations(data);
+        if (data.length > 0) {
+          await loadConversation(data[0].id, data);
+        } else {
+          if (!isInitializingRef.current) {
+            isInitializingRef.current = true;
+            await handleStartChat('general');
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch conversations:', e);
+      setIsLoadingMessages(false);
+    }
+  };
+
+  const checkBackendHealth = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/health`);
+      if (res.ok) {
+        const data = await res.json();
+        setBackendHealth(data);
+      } else {
+        setBackendHealth(null);
+      }
+    } catch (e) {
+      console.error('Error connecting to backend:', e);
+      setBackendHealth(null);
+    }
+  };
+
   // Load initial data
   useEffect(() => {
     checkBackendHealth();
@@ -180,12 +285,15 @@ export default function App() {
       
       recognitionRef.current = rec;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  // Synchronous scroll positioning BEFORE paint to prevent top-to-bottom crawling animation
+  useLayoutEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [messages, isLoadingMessages, activeConvId]);
 
   // Handle textarea autosize
   useEffect(() => {
@@ -194,89 +302,6 @@ export default function App() {
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
     }
   }, [inputText]);
-
-  const checkBackendHealth = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/health`);
-      if (res.ok) {
-        const data = await res.json();
-        setBackendHealth(data);
-      } else {
-        setBackendHealth(null);
-      }
-    } catch (e) {
-      console.error('Error connecting to backend:', e);
-      setBackendHealth(null);
-    }
-  };
-
-  const fetchConversations = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/conversations`);
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data);
-        if (data.length > 0) {
-          loadConversation(data[0].id, data);
-        } else {
-          // Guard against StrictMode or concurrent double-invocation
-          if (!isInitializingRef.current) {
-            isInitializingRef.current = true;
-            await handleStartChat();
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Failed to fetch conversations:', e);
-    }
-  };
-
-  const loadConversation = async (id: string, currentConvs?: Conversation[]) => {
-    try {
-      setActiveConvId(id);
-      // Stop speech if speaking
-      window.speechSynthesis?.cancel();
-      setSpeakingMessageId(null);
-      
-      const res = await fetch(`${API_BASE}/conversations/${id}/messages`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data);
-        
-        // Find conversation details
-        const convList = currentConvs || conversations;
-        const conv = convList.find(c => c.id === id);
-        if (conv) {
-          setSelectedAgent(conv.agent_type);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load messages:', e);
-    }
-  };
-
-  const handleStartChat = async (agent: 'general' | 'technical' | 'billing' = 'general') => {
-    try {
-      const res = await fetch(`${API_BASE}/conversations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `Chat Session`,
-          agent_type: agent
-        })
-      });
-
-      if (res.ok) {
-        const newConv = await res.json();
-        setConversations(prev => [newConv, ...prev]);
-        setActiveConvId(newConv.id);
-        setSelectedAgent(agent);
-        setMessages([]);
-      }
-    } catch (e) {
-      console.error('Failed to create conversation:', e);
-    }
-  };
 
   const handleDeleteConversation = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -298,7 +323,7 @@ export default function App() {
           } else {
             setActiveConvId(null);
             setMessages([]);
-            handleStartChat();
+            handleStartChat('general');
           }
         }
       }
@@ -310,21 +335,18 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (textToSend?: string) => {
-    const messageContent = textToSend || inputText;
-    if (!messageContent.trim() || !activeConvId || isGenerating) return;
+  const handleSendMessageWithConvId = async (targetConvId: string, messageContent: string) => {
+    if (!messageContent.trim() || !targetConvId || isGenerating) return;
 
     setInputText('');
     setIsGenerating(true);
 
-    // Save scroll state before adding message
     const tempUserMsgId = Date.now();
     const tempBotMsgId = Date.now() + 1;
 
-    // Append local messages optimistically
     const localUserMsg: Message = {
       id: tempUserMsgId,
-      conversation_id: activeConvId,
+      conversation_id: targetConvId,
       sender: 'user',
       content: messageContent,
       timestamp: new Date().toISOString()
@@ -332,7 +354,7 @@ export default function App() {
     
     const localBotMsg: Message = {
       id: tempBotMsgId,
-      conversation_id: activeConvId,
+      conversation_id: targetConvId,
       sender: 'bot',
       content: '',
       timestamp: new Date().toISOString()
@@ -341,8 +363,7 @@ export default function App() {
     setMessages(prev => [...prev, localUserMsg, localBotMsg]);
 
     try {
-      // POST message to get back persistent database IDs
-      const response = await fetch(`${API_BASE}/conversations/${activeConvId}/messages`, {
+      const response = await fetch(`${API_BASE}/conversations/${targetConvId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: messageContent })
@@ -354,7 +375,6 @@ export default function App() {
 
       const { user_message, bot_message } = await response.json();
 
-      // Update message state with actual database IDs
       setMessages(prev => 
         prev.map(m => {
           if (m.id === tempUserMsgId) return user_message;
@@ -363,8 +383,7 @@ export default function App() {
         })
       );
 
-      // Open SSE connection to stream response
-      const streamUrl = `${API_BASE}/conversations/${activeConvId}/messages/${bot_message.id}/stream`;
+      const streamUrl = `${API_BASE}/conversations/${targetConvId}/messages/${bot_message.id}/stream`;
       const eventSource = new EventSource(streamUrl);
 
       eventSource.onmessage = (event) => {
@@ -419,6 +438,12 @@ export default function App() {
     }
   };
 
+  const handleSendMessage = async (textToSend?: string) => {
+    if (!activeConvId) return;
+    const messageContent = textToSend || inputText;
+    await handleSendMessageWithConvId(activeConvId, messageContent);
+  };
+
   const handleFeedback = async (messageId: number, rating: 'thumbs_up' | 'thumbs_down') => {
     try {
       const res = await fetch(`${API_BASE}/messages/${messageId}/feedback`, {
@@ -452,11 +477,10 @@ export default function App() {
     } else {
       window.speechSynthesis.cancel();
       
-      // Clean up markdown before speaking
       const plainText = message.content
         .replace(/```[\s\S]*?```/g, '[code block omitted]')
         .replace(/`([^`]+)`/g, '$1')
-        .replace(/[*#_\-]/g, '');
+        .replace(/[*#_-]/g, '');
 
       const utterance = new SpeechSynthesisUtterance(plainText);
       utterance.onend = () => {
@@ -499,14 +523,12 @@ export default function App() {
   const renderMessageContent = (content: string, msgId: number) => {
     if (!content) return <div className="typing-dots"><span className="typing-dot"></span><span className="typing-dot"></span><span className="typing-dot"></span></div>;
 
-    // Detect code blocks: ```language ... ```
     const parts = content.split(/(```[\s\S]*?```)/g);
 
     return (
       <div className="markdown-content">
         {parts.map((part, i) => {
           if (part.startsWith('```') && part.endsWith('```')) {
-            // Code block
             const lines = part.slice(3, -3).trim().split('\n');
             const firstLine = lines[0] || '';
             const language = ['python', 'javascript', 'html', 'css', 'bash', 'sql'].includes(firstLine.toLowerCase()) ? firstLine : 'code';
@@ -531,7 +553,6 @@ export default function App() {
               </div>
             );
           } else {
-            // Text block with inline formatting
             const textLines = part.split('\n');
             return textLines.map((line, j) => {
               if (line.startsWith('### ')) {
@@ -576,7 +597,7 @@ export default function App() {
     );
   };
 
-  // Agent profiles (Clean Monochromatic icons and details)
+  // Agent profiles
   const agents = {
     general: {
       title: 'General Support',
@@ -587,7 +608,7 @@ export default function App() {
       suggestions: [
         'How do I reset my account password?',
         'What is your refund policy?',
-        'How can I contact a manager?'
+        'How can I contact support?'
       ]
     },
     technical: {
@@ -597,9 +618,9 @@ export default function App() {
       classKey: 'technical',
       badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.05)', color: '#E5E5E5', borderColor: 'rgba(255, 255, 255, 0.15)' },
       suggestions: [
-        'How to make an async API status fetch in Python?',
-        'I am getting a network console connection error.',
-        'Show me how to format code output.'
+        'How to make an async API call in Python?',
+        'I am getting a CORS connection error.',
+        'Show me how to setup Docker container.'
       ]
     },
     billing: {
@@ -609,19 +630,25 @@ export default function App() {
       classKey: 'billing',
       badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.03)', color: '#A3A3A3', borderColor: 'rgba(255, 255, 255, 0.1)' },
       suggestions: [
-        'What are the pricing plans for the chatbot service?',
-        'Where can I find and download my PDF invoices?',
-        'Can I upgrade my monthly subscription plan?'
+        'What are the subscription plans available?',
+        'Where can I download my billing invoices?',
+        'How do I update my payment method?'
       ]
     }
   };
 
+  const currentAgentInfo = agents[selectedAgent] || agents.general;
+
   return (
     <div className="app-container">
-      {/* BACKGROUND FLOATING GRADIENT BLOBS */}
+      {/* REAL THREE.JS 3D WEBGL BACKGROUND SCENE */}
+      <ThreeBackground scrollRef={chatScrollRef} agentType={selectedAgent} />
+
+      {/* BACKGROUND FLOATING 3D GRADIENT ORBS */}
       <div className="bg-blobs">
         <div className="blob blob-1"></div>
         <div className="blob blob-2"></div>
+        <div className="blob blob-3"></div>
       </div>
 
       {/* 1. SIDEBAR */}
@@ -642,7 +669,7 @@ export default function App() {
           </div>
           
           <button 
-            onClick={() => handleStartChat()}
+            onClick={() => setShowAgentModal(true)}
             className="btn-3d btn-3d-secondary"
             style={{ padding: '8px', borderRadius: '10px' }}
             title="New Chat Session"
@@ -755,10 +782,18 @@ export default function App() {
             <div className="chat-header">
               <div className="chat-header-left">
                 <div className="chat-header-avatar">
-                  <Bot size={18} style={{ color: '#FFFFFF' }} />
+                  {currentAgentInfo.icon}
                 </div>
                 <div>
-                  <h3 className="chat-header-title">AI Assistant</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 className="chat-header-title">AI Assistant</h3>
+                    <span 
+                      className="chat-header-badge"
+                      style={currentAgentInfo.badgeColor}
+                    >
+                      {currentAgentInfo.title}
+                    </span>
+                  </div>
                   <span className="chat-header-subtitle">Ask questions and get instant answers</span>
                 </div>
               </div>
@@ -787,7 +822,7 @@ export default function App() {
         )}
 
         {/* Message Window / KB Window */}
-        <div className="chat-scroll-container">
+        <div className="chat-scroll-container" ref={chatScrollRef}>
           <div className="chat-content-width">
             {currentView === 'kb' ? (
               /* KNOWLEDGE BASE VIEW */
@@ -836,9 +871,9 @@ export default function App() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {documents.map((doc) => (
-                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyItems: 'space-between', padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '12px' }}>
+                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <FileText size={18} style={{ color: '#3B82F6' }} />
+                          <FileText size={18} style={{ color: '#FFFFFF' }} />
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ fontSize: '13px', fontWeight: '600', color: '#E2E8F0' }}>{doc.filename}</span>
                             <span style={{ fontSize: '11px', color: '#525252', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
@@ -858,32 +893,83 @@ export default function App() {
                 )}
               </div>
             ) : (
-              !activeConvId ? (
+              !activeConvId || isLoadingMessages ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#A3A3A3', gap: '12px', padding: '100px 0' }}>
                   <RefreshCw size={24} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span>Initializing chat session...</span>
+                  <span>Loading conversation history...</span>
                 </div>
               ) : (
                 /* CONVERSATION THREAD */
                 <>
                   {messages.length === 0 ? (
-                    /* Welcome view */
+                    /* Welcome View with Agent Cards & Suggestions */
                     <div className="chat-welcome-container">
                       <div className="welcome-avatar-wrapper">
-                        <Bot size={22} style={{ color: '#FFFFFF' }} />
+                        {currentAgentInfo.icon}
                       </div>
                       <div>
-                        <h3 className="welcome-title">AI Assistant</h3>
+                        <h3 className="welcome-title">{currentAgentInfo.title}</h3>
                         <p className="welcome-desc">
-                          Hello! I am your AI Assistant. How can I help you today? Ask me any questions, and I will do my best to answer.
+                          {currentAgentInfo.desc}
                         </p>
+                      </div>
+
+                      {/* Agent Selection Cards */}
+                      <div style={{ width: '100%', maxWidth: '720px', margin: '10px 0' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#737373', fontWeight: '700', marginBottom: '14px' }}>
+                          Select Support Desk
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                          {(['general', 'technical', 'billing'] as const).map((agentKey) => {
+                            const info = agents[agentKey];
+                            const isSelected = selectedAgent === agentKey;
+                            return (
+                              <div 
+                                key={agentKey}
+                                onClick={() => handleStartChat(agentKey)}
+                                style={{
+                                  padding: '14px',
+                                  borderRadius: '14px',
+                                  background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                                  border: isSelected ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  transition: 'all 0.2s ease'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                  {info.icon}
+                                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#FFFFFF' }}>{info.title}</span>
+                                </div>
+                                <p style={{ fontSize: '11px', color: '#A3A3A3', lineHeight: '1.4' }}>{info.desc}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Suggestions list for current agent */}
+                      <div className="welcome-suggestions-list">
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#737373', fontWeight: '700' }}>
+                          Suggested Questions
+                        </div>
+                        {currentAgentInfo.suggestions.map((suggestion, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handleSendMessage(suggestion)}
+                            className="suggestion-chip"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
                       </div>
                     </div>
                   ) : (
                     /* Message logs mapping */
                     messages.map((m) => {
                       const isUser = m.sender === 'user';
-                      const botRibbonClass = 'ribbon-general';
+                      const botRibbonClass = `ribbon-${selectedAgent}`;
+                      const sourcesList = getSourcesArray(m.sources);
 
                       return (
                         <div 
@@ -907,8 +993,56 @@ export default function App() {
                               )}
                             </div>
 
+                            {/* RAG Sources Section (Bot Only) */}
+                            {!isUser && sourcesList && sourcesList.length > 0 && (
+                              <div style={{ marginTop: '4px' }}>
+                                <button
+                                  onClick={() => toggleSources(m.id)}
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.04)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: '8px',
+                                    padding: '4px 10px',
+                                    color: '#A3A3A3',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                  }}
+                                >
+                                  <BookOpen size={12} style={{ color: '#FFFFFF' }} />
+                                  <span>{sourcesList.length} RAG Source{sourcesList.length > 1 ? 's' : ''} Referenced</span>
+                                  {expandedSources[m.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                </button>
 
-
+                                {expandedSources[m.id] && (
+                                  <div style={{
+                                    marginTop: '8px',
+                                    padding: '10px 12px',
+                                    background: 'rgba(10, 10, 10, 0.9)',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    borderRadius: '10px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px'
+                                  }}>
+                                    {sourcesList.map((src: any, sIdx: number) => (
+                                      <div key={sIdx} style={{ fontSize: '11px', color: '#D4D4D4', borderLeft: '2px solid #FFFFFF', paddingLeft: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                                          <span style={{ fontWeight: '700', color: '#FFFFFF' }}>📄 {src.filename}</span>
+                                          <span style={{ color: '#737373' }}>{(src.score * 100).toFixed(0)}% match</span>
+                                        </div>
+                                        <div style={{ fontStyle: 'italic', color: '#A3A3A3', fontSize: '10.5px', lineHeight: '1.4' }}>
+                                          "{src.content}"
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* Bot Message Actions */}
                             {!isUser && m.content && (
@@ -1030,13 +1164,65 @@ export default function App() {
 
       </main>
 
-      {/* 3. CUSTOM 3D MONOCHROME DELETE CONFIRMATION MODAL */}
+      {/* 3. NEW CHAT AGENT SELECTOR MODAL */}
+      {showAgentModal && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-scale-in" style={{ maxWidth: '480px' }}>
+            <h3 className="modal-title">New Chat Session</h3>
+            <p className="modal-desc">
+              Choose an AI Agent Support Desk to start your conversation.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+              {(['general', 'technical', 'billing'] as const).map((agentKey) => {
+                const info = agents[agentKey];
+                return (
+                  <button
+                    key={agentKey}
+                    onClick={() => handleStartChat(agentKey)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '12px 16px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      color: '#FFFFFF',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.05)' }}>
+                      {info.icon}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '700' }}>{info.title}</span>
+                      <span style={{ fontSize: '11px', color: '#A3A3A3', marginTop: '2px' }}>{info.desc}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="modal-actions">
+              <button 
+                onClick={() => setShowAgentModal(false)}
+                className="btn-3d btn-3d-secondary"
+                style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. CUSTOM DELETE CONFIRMATION MODAL */}
       {showDeleteConfirm && (
         <div className="modal-overlay">
           <div className="modal-content animate-scale-in">
             <h3 className="modal-title">Delete Session</h3>
             <p className="modal-desc">
-              Are you sure you want to permanently erase this chat logs? This action is irreversible.
+              Are you sure you want to permanently erase this chat session? This action is irreversible.
             </p>
             <div className="modal-actions">
               <button 

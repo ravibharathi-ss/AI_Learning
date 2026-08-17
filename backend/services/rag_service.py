@@ -67,7 +67,7 @@ class RagService:
         """
         Computes cosine similarity between two vectors.
         """
-        if not vec1 or not vec2:
+        if not vec1 or not vec2 or len(vec1) != len(vec2):
             return 0.0
         dot_product = sum(a * b for a, b in zip(vec1, vec2))
         magnitude1 = math.sqrt(sum(a * a for a in vec1))

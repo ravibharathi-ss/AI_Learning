@@ -4,13 +4,16 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
 from database import Base
 
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(String(50), primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(100), nullable=False)
     agent_type = Column(String(50), default="general")
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
 
@@ -22,7 +25,7 @@ class Message(Base):
     sender = Column(String(20), nullable=False)  # 'user' or 'bot'
     content = Column(Text, nullable=False)
     sources = Column(Text, nullable=True) # JSON-serialized list of retrieved chunks
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=utc_now)
 
     conversation = relationship("Conversation", back_populates="messages")
     feedback = relationship("Feedback", back_populates="message", uselist=False, cascade="all, delete-orphan")
@@ -34,7 +37,7 @@ class Feedback(Base):
     message_id = Column(Integer, ForeignKey("messages.id", ondelete="CASCADE"), nullable=False, unique=True)
     rating = Column(String(10), nullable=False)  # 'thumbs_up' or 'thumbs_down'
     comment = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=utc_now)
 
     message = relationship("Message", back_populates="feedback")
 
@@ -43,7 +46,7 @@ class Document(Base):
 
     id = Column(String(50), primary_key=True, default=lambda: str(uuid.uuid4()))
     filename = Column(String(200), nullable=False)
-    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+    uploaded_at = Column(DateTime, default=utc_now)
 
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
 

@@ -155,12 +155,14 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
         try:
             async for chunk in ollama_service.get_chat_stream(conv.agent_type, openai_history, rag_context=rag_context):
                 accumulated_response.append(chunk)
-                # SSE data needs to be prefixed with 'data: ' and followed by double newlines
-                yield f"data: {chunk}\n\n"
+                # SSE data needs multiline content properly formatted with 'data: ' prefix
+                formatted_chunk = chunk.replace("\n", "\ndata: ")
+                yield f"data: {formatted_chunk}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             error_msg = f"Error during streaming: {str(e)}"
-            yield f"data: {error_msg}\n\n"
+            formatted_error = error_msg.replace("\n", "\ndata: ")
+            yield f"data: {formatted_error}\n\n"
             accumulated_response.append(error_msg)
         finally:
             # Update database with the full content and sources references
@@ -197,7 +199,7 @@ def submit_feedback(message_id: int, feedback_in: schemas.FeedbackBase, db: Sess
     if existing_fb:
         existing_fb.rating = feedback_in.rating
         existing_fb.comment = feedback_in.comment
-        existing_fb.timestamp = models.datetime.datetime.utcnow()
+        existing_fb.timestamp = models.utc_now()
         db.commit()
         db.refresh(existing_fb)
         return existing_fb
