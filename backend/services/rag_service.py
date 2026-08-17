@@ -79,7 +79,14 @@ class RagService:
     def index_document(self, db: Session, filename: str, content: str) -> models.Document:
         """
         Chunks the document content, generates embeddings locally, and saves them to SQLite.
+        Deletes any pre-existing document with the same filename to avoid stale/duplicate embeddings.
         """
+        # Remove any existing document with the same filename
+        existing_docs = db.query(models.Document).filter(models.Document.filename == filename).all()
+        for old_doc in existing_docs:
+            db.delete(old_doc)
+        db.commit()
+
         # 1. Create document database entry
         doc = models.Document(filename=filename)
         db.add(doc)
