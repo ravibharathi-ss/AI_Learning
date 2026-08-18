@@ -1,0 +1,21 @@
+# Return and Refund Policy
+
+## Overview
+We offer a 30-day money-back guarantee for all digital software subscriptions and physical items purchased directly from our official store.
+
+## Return Eligibility & Requirements
+1. **30-Day Window**: Items must be returned within 30 days of original purchase date.
+2. **Condition**: Physical items must be unopened, in original packaging, and contain all serial numbers.
+3. **Proof of Purchase**: A valid receipt or order ID is required for processing refunds.
+
+## Refund Process
+- Once your return is received and inspected, we will notify you of the approval or rejection of your refund.
+- If approved, your refund will be processed to your original credit card or payment method within 5-7 business days.
+
+## Technical Support Error Codes
+- **ERR-4032**: Database connection timeout. Resolved by clearing browser cache or restarting the local service.
+- **ERR-5001**: Invalid payment gateway token. Contact billing support to refresh API keys.
+
+## Billing & Invoices
+- Monthly invoices can be downloaded directly from your Account Dashboard under "Billing & History".
+- Annual subscription plans automatically receive a 20% discount applied at checkout.

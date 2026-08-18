@@ -44,8 +44,11 @@ class OllamaService:
         system_prompt = self._get_system_prompt(agent_type)
         if rag_context:
             system_prompt += (
-                f"\n\nContext from Knowledge Base:\n{rag_context}\n\n"
-                "Use this context to help answer the user's question."
+                "\n\nCRITICAL KNOWLEDGE BASE CONTEXT:\n"
+                "You are provided with reference documents below. "
+                "Answer the user's question directly using the information in this context. "
+                "Base your answer strictly on the provided facts without stating that you are an AI assistant lacking physical presence if the context describes a product, policy, or procedure.\n\n"
+                f"--- REFERENCE DOCUMENTS ---\n{rag_context}\n---------------------------"
             )
 
         payload = [{"role": "system", "content": system_prompt}]

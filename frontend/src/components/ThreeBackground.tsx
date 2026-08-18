@@ -29,7 +29,7 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
     const container = containerRef.current;
     if (!container) return;
 
-    // 1. Scene & Camera
+    // 1. Scene & Camera Setup
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(
       60,
@@ -102,16 +102,25 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
 
     // 3C. Vibrant 3D Starfield / Particle Cloud
     const particleCount = 1200;
-    const positions = new Float32Array(particleCount * 3);
+    const initialPositions = new Float32Array(particleCount * 3);
+    const currentPositions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
 
     const color1 = new THREE.Color('#00F0FF');
     const color2 = new THREE.Color('#9D00FF');
 
     for (let i = 0; i < particleCount; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 60;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 60;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 50;
+      const px = (Math.random() - 0.5) * 60;
+      const py = (Math.random() - 0.5) * 60;
+      const pz = (Math.random() - 0.5) * 50;
+
+      initialPositions[i * 3] = px;
+      initialPositions[i * 3 + 1] = py;
+      initialPositions[i * 3 + 2] = pz;
+
+      currentPositions[i * 3] = px;
+      currentPositions[i * 3 + 1] = py;
+      currentPositions[i * 3 + 2] = pz;
 
       const mixedColor = color1.clone().lerp(color2, Math.random());
       colors[i * 3] = mixedColor.r;
@@ -120,19 +129,23 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
     }
 
     const particleGeometry = new THREE.BufferGeometry();
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
     particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     const particleMaterial = new THREE.PointsMaterial({
       size: 0.22,
       vertexColors: true,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.75,
       blending: THREE.AdditiveBlending
     });
 
     const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
     mainGroup.add(particleSystem);
+
+    // 3D Click Shockwave Ring Group
+    const shockwavesGroup = new THREE.Group();
+    scene.add(shockwavesGroup);
 
     // 4. Dynamic 3D Lighting Setup
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
@@ -150,15 +163,60 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
     spotLight.position.set(0, 20, 20);
     scene.add(spotLight);
 
-    // 5. Interactive Mouse Tracking & Scroll Listener
+    // 5. Interactive Mouse Drag & Move Interaction
     let mouseX = 0;
     let mouseY = 0;
     let targetScrollY = 0;
     let currentScrollY = 0;
 
+    let isMouseDown = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    let dragRotationX = 0;
+    let dragRotationY = 0;
+
     const handleMouseMove = (e: MouseEvent) => {
       mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
       mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+
+      if (isMouseDown) {
+        const deltaX = e.clientX - previousMousePosition.x;
+        const deltaY = e.clientY - previousMousePosition.y;
+
+        dragRotationY += deltaX * 0.006;
+        dragRotationX += deltaY * 0.006;
+
+        previousMousePosition = { x: e.clientX, y: e.clientY };
+      }
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      isMouseDown = true;
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+
+      // Spawn 3D Shockwave Ring on Click
+      const ringGeom = new THREE.RingGeometry(0.3, 0.5, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: currentColor1Ref.current,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8
+      });
+      const ringMesh = new THREE.Mesh(ringGeom, ringMat);
+
+      // Convert screen coords to 3D world position
+      const vector = new THREE.Vector3(mouseX, -mouseY, 0.5);
+      vector.unproject(camera);
+      const dir = vector.sub(camera.position).normalize();
+      const distance = -camera.position.z / dir.z;
+      const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+      ringMesh.position.copy(pos);
+      ringMesh.userData = { scaleSpeed: 0.15, opacityDecay: 0.94 };
+      shockwavesGroup.add(ringMesh);
+    };
+
+    const handleMouseUp = () => {
+      isMouseDown = false;
     };
 
     const scrollContainer = scrollRef.current;
@@ -169,6 +227,9 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
     };
 
     window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    
     if (scrollContainer) {
       scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     }
@@ -193,9 +254,9 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
       // Smooth scroll interpolation
       currentScrollY += (targetScrollY - currentScrollY) * 0.1;
 
-      // 3D SCROLL ANIMATION: Transform 3D geometries continuously based on scroll position!
-      mainGroup.rotation.y = time * 0.15 + currentScrollY * 0.003;
-      mainGroup.rotation.x = time * 0.1 + currentScrollY * 0.002;
+      // 3D SCROLL & DRAG ANIMATION: Combine scroll, automatic rotation, and 3D mouse drag!
+      mainGroup.rotation.y = time * 0.15 + currentScrollY * 0.003 + dragRotationY;
+      mainGroup.rotation.x = time * 0.1 + currentScrollY * 0.002 + dragRotationX;
       mainGroup.position.y = (currentScrollY * 0.008) % 10 - 2;
 
       // Orbiting 3D Crystals
@@ -205,6 +266,47 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
         crystal.rotation.y += delta * (0.6 + idx * 0.1);
         crystal.position.z = Math.sin(time * 2 + idx) * 2;
       });
+
+      // 3D Magnetic Particle Attraction to Mouse Cursor
+      const posAttr = particleGeometry.attributes.position as THREE.BufferAttribute;
+      const posArray = posAttr.array as Float32Array;
+
+      const cursorWorldX = mouseX * 18;
+      const cursorWorldY = -mouseY * 18;
+
+      for (let i = 0; i < particleCount; i++) {
+        const i3 = i * 3;
+        const initX = initialPositions[i3];
+        const initY = initialPositions[i3 + 1];
+
+        const dx = cursorWorldX - initX;
+        const dy = cursorWorldY - initY;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < 100) {
+          const force = (100 - distSq) * 0.015;
+          posArray[i3] += (initX + dx * force * 0.05 - posArray[i3]) * 0.1;
+          posArray[i3 + 1] += (initY + dy * force * 0.05 - posArray[i3 + 1]) * 0.1;
+        } else {
+          posArray[i3] += (initX - posArray[i3]) * 0.05;
+          posArray[i3 + 1] += (initY - posArray[i3 + 1]) * 0.05;
+        }
+      }
+      posAttr.needsUpdate = true;
+
+      // Expand & Fade 3D Click Shockwaves
+      for (let i = shockwavesGroup.children.length - 1; i >= 0; i--) {
+        const ring = shockwavesGroup.children[i] as THREE.Mesh;
+        const mat = ring.material as THREE.MeshBasicMaterial;
+        ring.scale.addScalar(ring.userData.scaleSpeed);
+        mat.opacity *= ring.userData.opacityDecay;
+
+        if (mat.opacity < 0.02) {
+          shockwavesGroup.remove(ring);
+          ring.geometry.dispose();
+          mat.dispose();
+        }
+      }
 
       // Mouse Parallax Camera Motion
       camera.position.x += (mouseX * 5 - camera.position.x) * 0.05;
@@ -228,13 +330,17 @@ export default function ThreeBackground({ scrollRef, agentType = 'general' }: Th
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('resize', handleResize);
+
       if (scrollContainer) {
         scrollContainer.removeEventListener('scroll', handleScroll);
       }
       if (container && renderer.domElement) {
         container.removeChild(renderer.domElement);
       }
+
       renderer.dispose();
       knotGeometry.dispose();
       knotMaterial.dispose();

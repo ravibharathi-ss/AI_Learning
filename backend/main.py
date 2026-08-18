@@ -132,13 +132,15 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
         role = "user" if msg.sender == "user" else "assistant"
         openai_history.append({"role": role, "content": msg.content})
 
-    # Retrieve relevant context from RAG
+    # Retrieve relevant context using Week 4 Hybrid Search & Reranking
     rag_context = ""
     retrieved_chunks = []
+    latest_user_query = ""
     if len(history_messages) > 0:
         latest_user_query = history_messages[-1].content
         try:
-            retrieved_chunks = rag_service.retrieve(db, latest_user_query, limit=3)
+            hybrid_res = rag_service.retrieve_hybrid(db, latest_user_query, limit=3)
+            retrieved_chunks = hybrid_res["chunks"]
             if retrieved_chunks:
                 rag_context = "\n\n".join(
                     [f"Source [{chunk['filename']}]: {chunk['content']}" for chunk in retrieved_chunks]
@@ -255,6 +257,51 @@ def delete_document(document_id: str, db: Session = Depends(get_db)):
     db.delete(doc)
     db.commit()
     return
+
+# 9. Week 4 RAG Inspection & Debugging Endpoints
+@app.post("/api/rag/inspect", response_model=schemas.RagInspectResponse)
+async def inspect_rag_query(payload: schemas.RagInspectRequest, db: Session = Depends(get_db)):
+    """
+    Performs full Week 4 RAG Inspection workflow:
+    Rewritten Query -> Hybrid Ranks -> Reranking -> Failure Diagnosis -> Prompt & LLM Generation.
+    """
+    hybrid_res = rag_service.retrieve_hybrid(db, payload.query, limit=3)
+    chunks = hybrid_res["chunks"]
+
+    rag_context = ""
+    if chunks:
+        rag_context = "\n\n".join([f"Source [{c['filename']}]: {c['content']}" for c in chunks])
+
+    system_prompt = ollama_service._get_system_prompt(payload.agent_type)
+    if rag_context:
+        system_prompt += f"\n\nContext from Knowledge Base:\n{rag_context}\n\nUse this context to answer the user's question."
+
+    # Collect LLM response
+    messages = [{"role": "user", "content": payload.query}]
+    response_tokens = []
+    async for chunk in ollama_service.get_chat_stream(payload.agent_type, messages, rag_context=rag_context):
+        response_tokens.append(chunk)
+
+    full_llm_response = "".join(response_tokens)
+    diagnostic = rag_service.classify_failure(payload.query, chunks, full_llm_response)
+
+    return {
+        "query": payload.query,
+        "query_info": hybrid_res["query_info"],
+        "retrieved_chunks": chunks,
+        "failure_diagnostic": diagnostic,
+        "system_prompt": system_prompt,
+        "llm_response": full_llm_response
+    }
+
+@app.post("/api/rag/evaluate", response_model=schemas.EvalMetricsResponse)
+def evaluate_rag(payload: schemas.EvalMetricsRequest, db: Session = Depends(get_db)):
+    """
+    Evaluates Hit-Rate@3 and Mean Reciprocal Rank (MRR) for test benchmarks.
+    """
+    test_cases_dicts = [tc.model_dump() for tc in payload.test_cases]
+    metrics = rag_service.evaluate_retrieval_metrics(db, test_cases_dicts)
+    return metrics
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")

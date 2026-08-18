@@ -21,7 +21,9 @@ import {
   Upload,
   FileText,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Search,
+  AlertTriangle
 } from 'lucide-react';
 
 interface Feedback {
@@ -36,14 +38,14 @@ interface Message {
   sender: 'user' | 'bot';
   content: string;
   timestamp: string;
-  sources?: Array<{ id: number; filename: string; content: string; score: number }> | null;
-  feedback?: Feedback | null;
+  sources?: any;
+  feedback?: Feedback;
 }
 
 interface Conversation {
   id: string;
   title: string;
-  agent_type: 'general' | 'technical' | 'billing';
+  agent_type: string;
   created_at: string;
 }
 
@@ -83,10 +85,63 @@ export default function App() {
   const isInitializingRef = useRef(false);
 
   // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
+
+  // Week 4 RAG Debugger State
+  const [inspectQuery, setInspectQuery] = useState('ERR-4032');
+  const [inspectResult, setInspectResult] = useState<any>(null);
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [evalMetrics, setEvalMetrics] = useState<any>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+
+  const handleInspectQuery = async (queryToTest?: string) => {
+    const query = queryToTest || inspectQuery;
+    if (!query.trim()) return;
+    setIsInspecting(true);
+    try {
+      const res = await fetch(`${API_BASE}/rag/inspect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, agent_type: selectedAgent })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setInspectResult(data);
+      }
+    } catch (e) {
+      console.error("Inspection error:", e);
+    } finally {
+      setIsInspecting(false);
+    }
+  };
+
+  const handleRunEvaluation = async () => {
+    setIsEvaluating(true);
+    try {
+      const testCases = [
+        { query: "ERR-4032", expected_keyword: "ERR-4032" },
+        { query: "What is your refund policy?", expected_keyword: "refund" },
+        { query: "Rocket launch date", expected_keyword: "2028" },
+        { query: "How to reset password", expected_keyword: "password" }
+      ];
+      const res = await fetch(`${API_BASE}/rag/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test_cases: testCases })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEvalMetrics(data);
+      }
+    } catch (e) {
+      console.error("Evaluation error:", e);
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
 
   const toggleSources = (msgId: number) => {
     setExpandedSources(prev => ({ ...prev, [msgId]: !prev[msgId] }));
@@ -169,7 +224,7 @@ export default function App() {
         const convList = currentConvs || conversations;
         const conv = convList.find(c => c.id === id);
         if (conv) {
-          setSelectedAgent(conv.agent_type);
+          setSelectedAgent((conv.agent_type as any) || 'general');
         }
       }
     } catch (e) {
@@ -679,13 +734,13 @@ export default function App() {
         </div>
 
         {/* View Toggle Tabs */}
-        <div style={{ display: 'flex', gap: '6px', padding: '8px 12px 12px 12px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+        <div style={{ display: 'flex', gap: '4px', padding: '8px 8px 12px 8px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
           <button
             onClick={() => setCurrentView('chat')}
             className={`btn-3d ${currentView === 'chat' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
-            style={{ flex: 1, padding: '6px 12px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+            style={{ flex: 1, padding: '6px 8px', borderRadius: '8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
           >
-            <Bot size={13} /> Chat
+            <Bot size={12} /> Chat
           </button>
           <button
             onClick={() => {
@@ -693,9 +748,19 @@ export default function App() {
               fetchDocuments();
             }}
             className={`btn-3d ${currentView === 'kb' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
-            style={{ flex: 1, padding: '6px 12px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+            style={{ flex: 1, padding: '6px 8px', borderRadius: '8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
           >
-            <BookOpen size={13} /> Knowledge Base
+            <BookOpen size={12} /> Knowledge
+          </button>
+          <button
+            onClick={() => {
+              setCurrentView('debugger');
+              if (!inspectResult) handleInspectQuery("ERR-4032");
+            }}
+            className={`btn-3d ${currentView === 'debugger' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
+            style={{ flex: 1, padding: '6px 8px', borderRadius: '8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+          >
+            <Wrench size={12} /> RAG Debugger
           </button>
         </div>
 
@@ -889,6 +954,194 @@ export default function App() {
                         </button>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            ) : currentView === 'debugger' ? (
+              /* WEEK 4 RAG DEBUGGER & INSPECTION VIEW */
+              <div className="debugger-container animate-scale-in" style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* 1. QUERY TEST & INSPECTOR CONTROL BAR */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px', padding: '20px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Search size={16} /> RAG Retrieval Inspector
+                  </h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#A3A3A3', lineHeight: '1.5' }}>
+                    Test any user prompt or code (e.g. <code>ERR-4032</code>) to inspect exact BM25 keyword ranks, vector similarity, RRF fusion, and failure classification.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input 
+                      type="text"
+                      value={inspectQuery}
+                      onChange={(e) => setInspectQuery(e.target.value)}
+                      placeholder="Enter question or code (e.g. ERR-4032, return policy)..."
+                      style={{ flex: 1, padding: '12px 16px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', color: '#FFFFFF', fontSize: '13px', fontFamily: 'inherit' }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleInspectQuery(); }}
+                    />
+                    <button
+                      onClick={() => handleInspectQuery()}
+                      disabled={isInspecting}
+                      className="btn-3d btn-3d-primary"
+                      style={{ padding: '12px 20px', borderRadius: '12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      {isInspecting ? <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={14} />}
+                      Inspect Pipeline
+                    </button>
+                  </div>
+
+                  {/* Preset Test Buttons */}
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600' }}>Quick Test Cases:</span>
+                    {["ERR-4032", "What is your refund policy?", "Rocket launch date"].map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => {
+                          setInspectQuery(preset);
+                          handleInspectQuery(preset);
+                        }}
+                        style={{ padding: '4px 10px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '8px', color: '#E2E8F0', fontSize: '11px', cursor: 'pointer' }}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. RETRIEVAL BENCHMARK EVALUATION METRICS PANEL */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#FFFFFF' }}>Hit-Rate@3 & MRR Benchmark</h4>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#A3A3A3' }}>Measure retrieval accuracy with quantitative numbers before vs after Hybrid Search.</p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    {evalMetrics && (
+                      <div style={{ display: 'flex', gap: '16px', textTransform: 'uppercase' }}>
+                        <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '6px 14px', borderRadius: '10px', textAlign: 'center' }}>
+                          <span style={{ display: 'block', fontSize: '10px', color: '#38BDF8', fontWeight: 'bold' }}>Hit-Rate@3</span>
+                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#FFFFFF' }}>{evalMetrics.hit_rate_at_3}%</span>
+                        </div>
+                        <div style={{ background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '6px 14px', borderRadius: '10px', textAlign: 'center' }}>
+                          <span style={{ display: 'block', fontSize: '10px', color: '#A855F7', fontWeight: 'bold' }}>MRR Score</span>
+                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#FFFFFF' }}>{evalMetrics.mrr}</span>
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      onClick={handleRunEvaluation}
+                      disabled={isEvaluating}
+                      className="btn-3d btn-3d-secondary"
+                      style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      {isEvaluating ? <RefreshCw size={13} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
+                      Run Benchmark
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. INSPECTION PIPELINE RESULTS */}
+                {inspectResult && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    
+                    {/* A. Failure Diagnostic Classifier Box */}
+                    <div style={{
+                      padding: '16px 20px',
+                      borderRadius: '14px',
+                      border: inspectResult.failure_diagnostic.classification === 'SUCCESS'
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE'
+                        ? '1px solid rgba(239, 68, 68, 0.5)'
+                        : '1px solid rgba(245, 158, 11, 0.5)',
+                      background: inspectResult.failure_diagnostic.classification === 'SUCCESS'
+                        ? 'rgba(16, 185, 129, 0.08)'
+                        : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE'
+                        ? 'rgba(239, 68, 68, 0.1)'
+                        : 'rgba(245, 158, 11, 0.1)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <AlertTriangle size={18} style={{
+                            color: inspectResult.failure_diagnostic.classification === 'SUCCESS' ? '#10B981' : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE' ? '#EF4444' : '#F59E0B'
+                          }} />
+                          <span style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#FFFFFF' }}>
+                            Diagnostic: {inspectResult.failure_diagnostic.classification}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: '#E2E8F0', fontWeight: 'bold' }}>
+                          {inspectResult.failure_diagnostic.subtype}
+                        </span>
+                      </div>
+                      <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#E2E8F0', lineHeight: '1.5' }}>
+                        <strong>Reason:</strong> {inspectResult.failure_diagnostic.reason}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#A3A3A3' }}>
+                        <strong>Recommended Remedy:</strong> {inspectResult.failure_diagnostic.remedy}
+                      </p>
+                    </div>
+
+                    {/* B. Step 1: Query Rewriting & Tokens */}
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '14px', padding: '16px' }}>
+                      <h5 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'bold', color: '#38BDF8' }}>1. Query Rewriting & Keyword Tokens</h5>
+                      <div style={{ fontSize: '12px', color: '#E2E8F0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div><strong>Original Query:</strong> "{inspectResult.query_info.original_query}"</div>
+                        <div><strong>Rewritten Search Query:</strong> "{inspectResult.query_info.rewritten_query}"</div>
+                        <div><strong>Extracted Keyword Tokens:</strong> {inspectResult.query_info.tokens.map((t: string) => <span key={t} style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', margin: '0 3px', fontFamily: 'monospace' }}>{t}</span>)}</div>
+                        {inspectResult.query_info.exact_codes.length > 0 && (
+                          <div><strong>Exact Codes Detected:</strong> {inspectResult.query_info.exact_codes.map((c: string) => <span key={c} style={{ background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38BDF8', padding: '2px 6px', borderRadius: '4px', margin: '0 3px', color: '#38BDF8', fontWeight: 'bold' }}>{c}</span>)}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* C. Step 2: Hybrid Search & Reranking Table */}
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '14px', padding: '16px' }}>
+                      <h5 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: 'bold', color: '#A855F7' }}>2. Hybrid RRF Search & Reranker Breakdown</h5>
+                      
+                      {inspectResult.retrieved_chunks.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: '#EF4444', padding: '12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px' }}>
+                          No document chunks retrieved for this query.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {inspectResult.retrieved_chunks.map((c: any, index: number) => (
+                            <div key={c.id} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px', fontWeight: 'bold', color: '#FFFFFF' }}>
+                                <span>Rank #{index + 1} — [{c.filename}]</span>
+                                <span style={{ color: '#10B981' }}>Final Rerank Score: {c.score}</span>
+                              </div>
+                              <p style={{ fontSize: '12px', color: '#A3A3A3', margin: '0 0 8px 0', fontFamily: 'monospace', background: 'rgba(0,0,0,0.4)', padding: '8px', borderRadius: '6px' }}>
+                                "{c.content}"
+                              </p>
+                              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#94A3B8' }}>
+                                <span>Vector Cosine: <strong>{(c.semantic_score * 100).toFixed(1)}%</strong></span>
+                                <span>BM25 Keyword: <strong>{c.bm25_score.toFixed(2)}</strong></span>
+                                <span>RRF Fusion Score: <strong>{c.rrf_score.toFixed(4)}</strong></span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* D. Step 3: Full Context & LLM Response */}
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '14px', padding: '16px' }}>
+                      <h5 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'bold', color: '#10B981' }}>3. System Context & LLM Generation</h5>
+                      <div style={{ fontSize: '12px', color: '#E2E8F0' }}>
+                        <div style={{ marginBottom: '10px' }}>
+                          <strong style={{ display: 'block', marginBottom: '4px', color: '#A3A3A3' }}>System Prompt Sent to LLM:</strong>
+                          <pre style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '8px', fontSize: '11px', color: '#94A3B8', whiteSpace: 'pre-wrap', maxHeight: '120px', overflowY: 'auto' }}>
+                            {inspectResult.system_prompt}
+                          </pre>
+                        </div>
+                        <div>
+                          <strong style={{ display: 'block', marginBottom: '4px', color: '#FFFFFF' }}>Generated LLM Output:</strong>
+                          <div style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px', borderRadius: '8px', fontSize: '13px', lineHeight: '1.6', color: '#FFFFFF' }}>
+                            {inspectResult.llm_response}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                   </div>
                 )}
               </div>

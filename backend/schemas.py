@@ -67,3 +67,45 @@ class DocumentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# RAG Week 4 Inspection & Debugging schemas
+class RagInspectRequest(BaseModel):
+    query: str
+    agent_type: str = "general"
+
+class ChunkInspection(BaseModel):
+    id: int
+    document_id: str
+    filename: str
+    content: str
+    score: float
+    semantic_score: float
+    bm25_score: float
+    rrf_score: float
+
+class FailureDiagnostic(BaseModel):
+    classification: str  # 'RETRIEVAL_FAILURE' | 'GENERATION_FAILURE' | 'SUCCESS'
+    subtype: str
+    reason: str
+    remedy: str
+
+class RagInspectResponse(BaseModel):
+    query: str
+    query_info: dict
+    retrieved_chunks: List[ChunkInspection]
+    failure_diagnostic: FailureDiagnostic
+    system_prompt: str
+    llm_response: str
+
+class TestCase(BaseModel):
+    query: str
+    expected_filename: Optional[str] = ""
+    expected_keyword: Optional[str] = ""
+
+class EvalMetricsRequest(BaseModel):
+    test_cases: List[TestCase]
+
+class EvalMetricsResponse(BaseModel):
+    hit_rate_at_3: float
+    mrr: float
+    total_queries: int
