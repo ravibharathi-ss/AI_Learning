@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import ThreeBackground from './components/ThreeBackground';
 import { 
   Plus, 
   Trash2, 
@@ -20,8 +19,6 @@ import {
   BookOpen,
   Upload,
   FileText,
-  ChevronDown,
-  ChevronUp,
   Search,
   AlertTriangle
 } from 'lucide-react';
@@ -88,7 +85,6 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
 
   // Week 4 RAG Debugger State
   const [inspectQuery, setInspectQuery] = useState('ERR-4032');
@@ -143,23 +139,7 @@ export default function App() {
     }
   };
 
-  const toggleSources = (msgId: number) => {
-    setExpandedSources(prev => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
 
-  const getSourcesArray = (sources: any) => {
-    if (!sources) return null;
-    if (Array.isArray(sources)) return sources;
-    if (typeof sources === 'string') {
-      try {
-        return JSON.parse(sources);
-      } catch (e) {
-        console.error('Failed to parse sources JSON:', e);
-        return null;
-      }
-    }
-    return null;
-  };
 
   const fetchDocuments = async () => {
     try {
@@ -696,16 +676,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* REAL THREE.JS 3D WEBGL BACKGROUND SCENE */}
-      <ThreeBackground scrollRef={chatScrollRef} agentType={selectedAgent} />
-
-      {/* BACKGROUND FLOATING 3D GRADIENT ORBS */}
-      <div className="bg-blobs">
-        <div className="blob blob-1"></div>
-        <div className="blob blob-2"></div>
-        <div className="blob blob-3"></div>
-      </div>
-
       {/* 1. SIDEBAR */}
       <aside className="sidebar">
         {/* Sidebar Header */}
@@ -1222,7 +1192,6 @@ export default function App() {
                     messages.map((m) => {
                       const isUser = m.sender === 'user';
                       const botRibbonClass = `ribbon-${selectedAgent}`;
-                      const sourcesList = getSourcesArray(m.sources);
 
                       return (
                         <div 
@@ -1246,56 +1215,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* RAG Sources Section (Bot Only) */}
-                            {!isUser && sourcesList && sourcesList.length > 0 && (
-                              <div style={{ marginTop: '4px' }}>
-                                <button
-                                  onClick={() => toggleSources(m.id)}
-                                  style={{
-                                    background: 'rgba(255, 255, 255, 0.04)',
-                                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                                    borderRadius: '8px',
-                                    padding: '4px 10px',
-                                    color: '#A3A3A3',
-                                    fontSize: '11px',
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px'
-                                  }}
-                                >
-                                  <BookOpen size={12} style={{ color: '#FFFFFF' }} />
-                                  <span>{sourcesList.length} RAG Source{sourcesList.length > 1 ? 's' : ''} Referenced</span>
-                                  {expandedSources[m.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                </button>
 
-                                {expandedSources[m.id] && (
-                                  <div style={{
-                                    marginTop: '8px',
-                                    padding: '10px 12px',
-                                    background: 'rgba(10, 10, 10, 0.9)',
-                                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                                    borderRadius: '10px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '8px'
-                                  }}>
-                                    {sourcesList.map((src: any, sIdx: number) => (
-                                      <div key={sIdx} style={{ fontSize: '11px', color: '#D4D4D4', borderLeft: '2px solid #FFFFFF', paddingLeft: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                                          <span style={{ fontWeight: '700', color: '#FFFFFF' }}>📄 {src.filename}</span>
-                                          <span style={{ color: '#737373' }}>{(src.score * 100).toFixed(0)}% match</span>
-                                        </div>
-                                        <div style={{ fontStyle: 'italic', color: '#A3A3A3', fontSize: '10.5px', lineHeight: '1.4' }}>
-                                          "{src.content}"
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
 
                             {/* Bot Message Actions */}
                             {!isUser && m.content && (

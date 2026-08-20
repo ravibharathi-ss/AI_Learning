@@ -11,20 +11,39 @@ try:
 except ImportError:
     from backend import models
 
+try:
+    import chromadb
+    CHROMA_AVAILABLE = True
+except ImportError:
+    CHROMA_AVAILABLE = False
+
 class RagService:
     def __init__(self):
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434")
         self.embed_model = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
+        # Initialize ChromaDB Vector Database
+        self.chroma_path = os.getenv("CHROMA_DB_PATH", os.path.join(os.path.dirname(__file__), "..", "chroma_db"))
+        self.collection = None
+        if CHROMA_AVAILABLE:
+            try:
+                os.makedirs(self.chroma_path, exist_ok=True)
+                self.chroma_client = chromadb.PersistentClient(path=self.chroma_path)
+                self.collection = self.chroma_client.get_or_create_collection(
+                    name="rag_knowledge_base",
+                    metadata={"hnsw:space": "cosine"}
+                )
+                print(f"ChromaDB Vector Database initialized at '{self.chroma_path}'.")
+            except Exception as e:
+                print(f"Error initializing ChromaDB: {e}")
+                self.collection = None
+
     def rewrite_query(self, query: str) -> Dict[str, Any]:
         """
         Cleans up and expands query into semantic query and exact keyword search tokens.
-        Extracts key codes (e.g., ERR-4032), numbers, and core nouns.
         """
         cleaned = re.sub(r'[^\w\s\-]', ' ', query)
         tokens = [t.lower() for t in cleaned.split() if len(t) > 1]
-
-        # Extract codes like ERR-4032 or numeric IDs
         exact_codes = re.findall(r'\b[A-Z0-9]{2,}\-[0-9]{3,}\b|\b[A-Z]{3,}[0-9]{2,}\b|\b\d{4}\b', query, re.IGNORECASE)
         
         stop_words = {'what', 'is', 'the', 'how', 'do', 'i', 'can', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'with', 'about', 'your', 'my', 'me', 'tell', 'show'}
@@ -46,7 +65,6 @@ class RagService:
             return chunks
 
         text = re.sub(r'\s+', ' ', text).strip()
-
         start = 0
         while start < len(text):
             end = start + chunk_size
@@ -113,7 +131,6 @@ class RagService:
         k1 = 1.5
         b = 0.75
 
-        # Count document frequency for each query term
         doc_freq = {}
         for token in tokens:
             doc_freq[token] = sum(1 for c in chunks if token in c.content.lower())
@@ -126,12 +143,10 @@ class RagService:
 
             score = 0.0
 
-            # 1. Exact code bonus (e.g., ERR-4032)
             for code in exact_codes:
                 if code in content_lower:
                     score += 10.0
 
-            # 2. BM25 term frequency scoring
             for token in tokens:
                 tf = content_lower.count(token)
                 if tf > 0:
@@ -153,12 +168,11 @@ class RagService:
         k: int = 60
     ) -> List[Dict[str, Any]]:
         """
-        Combines Semantic Vector Ranks and BM25 Keyword Ranks using RRF formula:
+        Combines Vector Ranks and BM25 Keyword Ranks using RRF formula:
         RRF_score(d) = 1 / (k + rank_semantic(d)) + 1 / (k + rank_bm25(d))
         """
         rrf_scores: Dict[int, Dict[str, Any]] = {}
 
-        # 1. Add semantic rank scores
         for rank, (score, chunk) in enumerate(semantic_ranked, start=1):
             chunk_id = chunk.id
             if chunk_id not in rrf_scores:
@@ -172,7 +186,6 @@ class RagService:
                 }
             rrf_scores[chunk_id]["rrf_score"] += 1.0 / (k + rank)
 
-        # 2. Add BM25 rank scores
         for rank, (score, chunk) in enumerate(bm25_ranked, start=1):
             chunk_id = chunk.id
             if chunk_id not in rrf_scores:
@@ -196,8 +209,7 @@ class RagService:
 
     def rerank_chunks(self, query_info: Dict[str, Any], candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Second-pass Cross-Encoder / Relevance Reranker.
-        Pushes top-quality chunks with high keyword density and semantic agreement to the top.
+        Second-pass Relevance Reranker.
         """
         tokens = query_info["tokens"]
         exact_codes = query_info["exact_codes"]
@@ -207,21 +219,17 @@ class RagService:
             chunk: models.DocumentChunk = candidate["chunk"]
             content_lower = chunk.content.lower()
 
-            # Base score from RRF
             rerank_score = candidate["rrf_score"] * 100.0
 
-            # Direct exact code match boost
             for code in exact_codes:
                 if code.lower() in content_lower:
                     rerank_score += 50.0
 
-            # Density of query tokens in chunk
             token_matches = sum(1 for t in tokens if t in content_lower)
             if tokens:
                 density = token_matches / len(tokens)
                 rerank_score += density * 30.0
 
-            # Combined semantic confidence bonus
             if candidate["semantic_score"] > 0.4:
                 rerank_score += candidate["semantic_score"] * 20.0
 
@@ -234,12 +242,19 @@ class RagService:
 
     def index_document(self, db: Session, filename: str, content: str) -> models.Document:
         """
-        Chunks document content, generates embeddings, and saves to SQLite database.
+        Chunks document content, generates embeddings, and saves to SQLite and ChromaDB Vector DB.
         """
         existing_docs = db.query(models.Document).filter(models.Document.filename == filename).all()
         for old_doc in existing_docs:
             db.delete(old_doc)
         db.commit()
+
+        # Sync deletion with ChromaDB
+        if self.collection:
+            try:
+                self.collection.delete(where={"filename": filename})
+            except Exception as e:
+                print(f"ChromaDB collection deletion note: {e}")
 
         doc = models.Document(filename=filename)
         db.add(doc)
@@ -247,6 +262,11 @@ class RagService:
         db.refresh(doc)
 
         chunks = self.chunk_text(content)
+        chroma_ids = []
+        chroma_embeddings = []
+        chroma_documents = []
+        chroma_metadatas = []
+
         for chunk_text in chunks:
             embedding = self.get_embedding(chunk_text)
             embedding_json = json.dumps(embedding)
@@ -257,14 +277,37 @@ class RagService:
                 embedding_json=embedding_json
             )
             db.add(db_chunk)
+            db.commit()
+            db.refresh(db_chunk)
 
-        db.commit()
+            if self.collection and embedding:
+                chroma_ids.append(f"chunk_{db_chunk.id}")
+                chroma_embeddings.append(embedding)
+                chroma_documents.append(chunk_text)
+                chroma_metadatas.append({
+                    "filename": filename,
+                    "document_id": str(doc.id),
+                    "chunk_id": db_chunk.id
+                })
+
+        # Add vectors to ChromaDB Persistent Collection
+        if self.collection and chroma_ids:
+            try:
+                self.collection.add(
+                    ids=chroma_ids,
+                    embeddings=chroma_embeddings,
+                    documents=chroma_documents,
+                    metadatas=chroma_metadatas
+                )
+                print(f"Indexed {len(chroma_ids)} vector embeddings for '{filename}' in ChromaDB.")
+            except Exception as e:
+                print(f"Error adding vectors to ChromaDB: {e}")
+
         return doc
 
     def retrieve_hybrid(self, db: Session, query: str, limit: int = 3) -> Dict[str, Any]:
         """
-        Performs full Week 4 Hybrid Retrieval pipeline:
-        Query Rewriting -> Semantic Vector Search -> BM25 Keyword Search -> RRF Fusion -> Reranking Pass.
+        Performs Hybrid Retrieval using ChromaDB Vector Search + BM25 Keyword Search + RRF + Reranker.
         """
         all_chunks = db.query(models.DocumentChunk).all()
         if not all_chunks:
@@ -275,11 +318,34 @@ class RagService:
             }
 
         query_info = self.rewrite_query(query)
+        chunk_map = {c.id: c for c in all_chunks}
+        semantic_scored: List[Tuple[float, models.DocumentChunk]] = []
 
-        # 1. Semantic Vector Search
+        # 1. Vector Search using ChromaDB HNSW Index
         query_embedding = self.get_embedding(query)
-        semantic_scored = []
-        if query_embedding:
+        if self.collection and query_embedding:
+            try:
+                chroma_results = self.collection.query(
+                    query_embeddings=[query_embedding],
+                    n_results=min(20, len(all_chunks)),
+                    include=['embeddings', 'documents', 'metadatas', 'distances']
+                )
+
+                if chroma_results and chroma_results.get('metadatas') and chroma_results['metadatas'][0]:
+                    metadatas = chroma_results['metadatas'][0]
+                    distances = chroma_results['distances'][0] if chroma_results.get('distances') else [0.0] * len(metadatas)
+
+                    for meta, dist in zip(metadatas, distances):
+                        cid = meta.get('chunk_id')
+                        if cid in chunk_map:
+                            # Cosine distance in ChromaDB is in range [0, 2], similarity = 1 - (dist / 2) or max(0, 1 - dist)
+                            similarity = max(0.0, 1.0 - dist)
+                            semantic_scored.append((similarity, chunk_map[cid]))
+            except Exception as e:
+                print(f"ChromaDB query error, falling back to SQLite vector search: {e}")
+
+        # Fallback Vector Search if ChromaDB not active
+        if not semantic_scored and query_embedding:
             for chunk in all_chunks:
                 try:
                     chunk_emb = json.loads(chunk.embedding_json)
@@ -323,7 +389,7 @@ class RagService:
 
     def retrieve(self, db: Session, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """
-        Backward-compatible retrieve method using Hybrid Search.
+        Backward-compatible retrieve method.
         """
         res = self.retrieve_hybrid(db, query, limit=limit)
         return res["chunks"]
@@ -335,10 +401,7 @@ class RagService:
         llm_response: str
     ) -> Dict[str, Any]:
         """
-        Classifies failure modes based on Week 4 Taxonomy:
-        - RETRIEVAL_FAILURE: Correct chunk never reached LLM (e.g. low score, missing keywords).
-        - GENERATION_FAILURE: Context reached LLM, but answer is wrong or hallucinated.
-        - SUCCESS: Context retrieved and valid answer generated.
+        Classifies failure modes based on Week 4 Taxonomy.
         """
         if not retrieved_chunks:
             return {
@@ -351,7 +414,6 @@ class RagService:
         max_semantic_score = max((c.get("semantic_score", 0.0) for c in retrieved_chunks), default=0.0)
         max_rerank_score = max((c.get("score", 0.0) for c in retrieved_chunks), default=0.0)
 
-        # If retrieved chunks have extremely weak score
         if max_semantic_score < 0.15 and max_rerank_score < 5.0:
             return {
                 "classification": "RETRIEVAL_FAILURE",
@@ -360,7 +422,6 @@ class RagService:
                 "remedy": "Increase Top-K limit or refine chunking size."
             }
 
-        # If Ollama is offline or error occurred
         if "⚠️ **Ollama is not responding.**" in llm_response or "Error during streaming" in llm_response:
             return {
                 "classification": "GENERATION_FAILURE",
@@ -369,7 +430,6 @@ class RagService:
                 "remedy": "Ensure Ollama container is running and model is pulled."
             }
 
-        # Check for context ignoring or hallucination indicators
         if "i don't know" in llm_response.lower() or "no information" in llm_response.lower():
             if max_semantic_score > 0.4:
                 return {
@@ -388,7 +448,7 @@ class RagService:
 
     def evaluate_retrieval_metrics(self, db: Session, test_cases: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Calculates Hit-Rate@K and Mean Reciprocal Rank (MRR) for test benchmarks before/after Hybrid Search.
+        Calculates Hit-Rate@K and Mean Reciprocal Rank (MRR) for test benchmarks.
         """
         total_queries = len(test_cases)
         if total_queries == 0:
