@@ -321,43 +321,51 @@ class RagService:
         chunk_map = {c.id: c for c in all_chunks}
         semantic_scored: List[Tuple[float, models.DocumentChunk]] = []
 
-        # 1. Vector Search using ChromaDB HNSW Index
-        query_embedding = self.get_embedding(query)
-        if self.collection and query_embedding:
-            try:
-                chroma_results = self.collection.query(
-                    query_embeddings=[query_embedding],
-                    n_results=min(20, len(all_chunks)),
-                    include=['embeddings', 'documents', 'metadatas', 'distances']
-                )
-
-                if chroma_results and chroma_results.get('metadatas') and chroma_results['metadatas'][0]:
-                    metadatas = chroma_results['metadatas'][0]
-                    distances = chroma_results['distances'][0] if chroma_results.get('distances') else [0.0] * len(metadatas)
-
-                    for meta, dist in zip(metadatas, distances):
-                        cid = meta.get('chunk_id')
-                        if cid in chunk_map:
-                            # Cosine distance in ChromaDB is in range [0, 2], similarity = 1 - (dist / 2) or max(0, 1 - dist)
-                            similarity = max(0.0, 1.0 - dist)
-                            semantic_scored.append((similarity, chunk_map[cid]))
-            except Exception as e:
-                print(f"ChromaDB query error, falling back to SQLite vector search: {e}")
-
-        # Fallback Vector Search if ChromaDB not active
-        if not semantic_scored and query_embedding:
-            for chunk in all_chunks:
-                try:
-                    chunk_emb = json.loads(chunk.embedding_json)
-                    if chunk_emb:
-                        sim = self.compute_cosine_similarity(query_embedding, chunk_emb)
-                        semantic_scored.append((sim, chunk))
-                except Exception:
-                    continue
-            semantic_scored.sort(key=lambda x: x[0], reverse=True)
-
-        # 2. BM25 Keyword Search
+        # 1. Fast BM25 Keyword Search
         bm25_scored = self.bm25_search(query_info, all_chunks)
+        top_bm25_score = bm25_scored[0][0] if bm25_scored else 0.0
+        has_exact_codes = len(query_info.get("exact_codes", [])) > 0
+
+        # Company keyword triggers that require vector embedding search
+        company_keywords = {'policy', 'refund', 'return', 'invoice', 'billing', 'err', 'error', 'subscription', 'guarantee', 'code', 'support', 'price', 'checkout'}
+        has_company_keyword = any(t in company_keywords for t in query_info.get("tokens", []))
+
+        # Fast-Path: Only generate vector embedding if query matches keywords, company triggers, or exact codes
+        query_embedding = None
+        if top_bm25_score > 0.0 or has_company_keyword or has_exact_codes:
+            query_embedding = self.get_embedding(query)
+
+        if query_embedding:
+            if self.collection:
+                try:
+                    chroma_results = self.collection.query(
+                        query_embeddings=[query_embedding],
+                        n_results=min(20, len(all_chunks)),
+                        include=['embeddings', 'documents', 'metadatas', 'distances']
+                    )
+
+                    if chroma_results and chroma_results.get('metadatas') and chroma_results['metadatas'][0]:
+                        metadatas = chroma_results['metadatas'][0]
+                        distances = chroma_results['distances'][0] if chroma_results.get('distances') else [0.0] * len(metadatas)
+
+                        for meta, dist in zip(metadatas, distances):
+                            cid = meta.get('chunk_id')
+                            if cid in chunk_map:
+                                similarity = max(0.0, 1.0 - dist)
+                                semantic_scored.append((similarity, chunk_map[cid]))
+                except Exception as e:
+                    print(f"ChromaDB query error, falling back to SQLite vector search: {e}")
+
+            if not semantic_scored:
+                for chunk in all_chunks:
+                    try:
+                        chunk_emb = json.loads(chunk.embedding_json)
+                        if chunk_emb:
+                            sim = self.compute_cosine_similarity(query_embedding, chunk_emb)
+                            semantic_scored.append((sim, chunk))
+                    except Exception:
+                        continue
+                semantic_scored.sort(key=lambda x: x[0], reverse=True)
 
         # 3. Reciprocal Rank Fusion (RRF)
         rrf_candidates = self.reciprocal_rank_fusion(semantic_scored[:20], bm25_scored[:20])
@@ -365,10 +373,12 @@ class RagService:
         # 4. Reranking Pass
         reranked_candidates = self.rerank_chunks(query_info, rrf_candidates)
 
-        # 5. Format output (with minimum relevance threshold check)
+        # 5. Format output (with strict relevance threshold check)
+        is_code_match = len(query_info.get("exact_codes", [])) > 0
         final_results = []
         for item in reranked_candidates[:limit]:
-            if item["semantic_score"] >= 0.18 or item["bm25_score"] > 0.1:
+            # Only include chunks with high semantic similarity, high BM25 keyword score, or exact code match
+            if item["semantic_score"] >= 0.45 or (item["bm25_score"] >= 1.5 and item["semantic_score"] >= 0.30) or is_code_match:
                 chunk: models.DocumentChunk = item["chunk"]
                 final_results.append({
                     "id": chunk.id,

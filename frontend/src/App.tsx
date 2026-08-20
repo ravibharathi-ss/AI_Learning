@@ -81,6 +81,17 @@ export default function App() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isInitializingRef = useRef(false);
 
+  const formatTimestamp = (ts: any) => {
+    if (!ts) return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const str = typeof ts === 'string' ? ts : (ts instanceof Date ? ts.toISOString() : String(ts));
+    const utcStr = str.endsWith('Z') || str.includes('+') ? str : `${str}Z`;
+    try {
+      return new Date(utcStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+  };
+
   // RAG / Knowledge Base State
   const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
@@ -1221,7 +1232,7 @@ export default function App() {
                             {!isUser && m.content && (
                               <div className="message-meta">
                                 <div className="message-meta-left">
-                                  <span>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span>{formatTimestamp(m.timestamp)}</span>
                                   <button 
                                     onClick={() => toggleSpeech(m)}
                                     className="meta-action-btn"
@@ -1255,7 +1266,7 @@ export default function App() {
                             {/* User Timestamp */}
                             {isUser && (
                               <div style={{ textAlign: 'right', fontSize: '10px', color: '#525252', paddingRight: '4px', fontWeight: '500' }}>
-                                {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {formatTimestamp(m.timestamp)}
                               </div>
                             )}
                           </div>
