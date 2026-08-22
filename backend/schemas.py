@@ -109,3 +109,65 @@ class EvalMetricsResponse(BaseModel):
     hit_rate_at_3: float
     mrr: float
     total_queries: int
+
+# Week 5: Trace & Error Analysis Schemas
+class TraceAnnotationCreate(BaseModel):
+    is_failure: bool = True
+    honest_note: str
+    category_name: Optional[str] = None
+    severity: str = "medium" # 'low', 'medium', 'high', 'critical'
+
+class TraceAnnotationResponse(BaseModel):
+    id: int
+    trace_id: str
+    is_failure: bool
+    honest_note: str
+    category_name: Optional[str] = None
+    severity: str
+    annotated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TraceResponse(BaseModel):
+    id: str
+    conversation_id: Optional[str] = None
+    message_id: Optional[int] = None
+    query: str
+    agent_type: str
+    track_code: str
+    system_prompt: Optional[str] = None
+    retrieved_chunks_json: Optional[str] = None
+    llm_response: str
+    latency_ms: int
+    timestamp: datetime
+    annotation: Optional[TraceAnnotationResponse] = None
+
+    class Config:
+        from_attributes = True
+
+class TaxonomyItem(BaseModel):
+    category_name: str
+    frequency: int
+    honest_notes: List[str]
+    severity_distribution: dict
+    avg_severity_weight: float
+    score: float # Frequency * avg_severity_weight
+    rank: int
+    is_chosen_target: bool
+    prediction: Optional[str] = None
+
+class TaxonomySummaryResponse(BaseModel):
+    total_traces: int
+    sample_size: int
+    passes_count: int
+    failures_count: int
+    annotated_count: int
+    unannotated_count: int
+    ranked_taxonomy: List[TaxonomyItem]
+    chosen_target: Optional[TaxonomyItem] = None
+
+class SetFixTargetRequest(BaseModel):
+    category_name: str
+    prediction: str
+

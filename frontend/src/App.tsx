@@ -12,7 +12,6 @@ import {
   ThumbsDown, 
   Copy, 
   Check, 
-  HelpCircle, 
   CreditCard, 
   Wrench, 
   RefreshCw,
@@ -20,7 +19,13 @@ import {
   Upload,
   FileText,
   Search,
-  AlertTriangle
+  AlertTriangle,
+  ShieldAlert,
+  Target,
+  Award,
+  Sparkles,
+  Layers,
+  Filter
 } from 'lucide-react';
 
 interface Feedback {
@@ -73,8 +78,6 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [convIdToDelete, setConvIdToDelete] = useState<string | null>(null);
 
-  // Agent selector modal state for starting a new chat from sidebar
-  const [showAgentModal, setShowAgentModal] = useState(false);
 
   // Refs
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -93,7 +96,7 @@ export default function App() {
   };
 
   // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -103,6 +106,156 @@ export default function App() {
   const [isInspecting, setIsInspecting] = useState(false);
   const [evalMetrics, setEvalMetrics] = useState<any>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  // Week 5 Evals & Error Analysis State
+  const [traces, setTraces] = useState<any[]>([]);
+  const [selectedTrace, setSelectedTrace] = useState<any | null>(null);
+  const [taxonomySummary, setTaxonomySummary] = useState<any | null>(null);
+  const [isFetchingTraces, setIsFetchingTraces] = useState(false);
+  const [isSeedingTraces, setIsSeedingTraces] = useState(false);
+  const [eaTrackFilter, setEaTrackFilter] = useState('ALL');
+  const [eaStatusFilter, setEaStatusFilter] = useState('all');
+  const [eaSubTab, setEaSubTab] = useState<'traces' | 'taxonomy' | 'report'>('traces');
+
+  // Open coding form state
+  const [openCodeNote, setOpenCodeNote] = useState('');
+  const [openCodeCategory, setOpenCodeCategory] = useState('');
+  const [openCodeIsFailure, setOpenCodeIsFailure] = useState(true);
+  const [openCodeSeverity, setOpenCodeSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
+  const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
+
+  // Target fix prediction state
+  const [targetPredictionInput, setTargetPredictionInput] = useState('');
+  const [isSavingPrediction, setIsSavingPrediction] = useState(false);
+  const [copyReportSuccess, setCopyReportSuccess] = useState(false);
+
+  const fetchTraces = async (track = eaTrackFilter, status = eaStatusFilter) => {
+    setIsFetchingTraces(true);
+    try {
+      const url = `${API_BASE}/traces?sample_size=20&track=${track}&status_filter=${status}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setTraces(data);
+        if (data.length > 0 && (!selectedTrace || !data.find((t: any) => t.id === selectedTrace.id))) {
+          loadTraceIntoForm(data[0]);
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching traces:", e);
+    } finally {
+      setIsFetchingTraces(false);
+    }
+  };
+
+  const fetchTaxonomySummary = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/error-analysis/taxonomy`);
+      if (res.ok) {
+        const data = await res.json();
+        setTaxonomySummary(data);
+        if (data.chosen_target && data.chosen_target.prediction) {
+          setTargetPredictionInput(data.chosen_target.prediction);
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching taxonomy summary:", e);
+    }
+  };
+
+  const loadTraceIntoForm = (trace: any) => {
+    setSelectedTrace(trace);
+    if (trace.annotation) {
+      setOpenCodeIsFailure(trace.annotation.is_failure);
+      setOpenCodeNote(trace.annotation.honest_note || '');
+      setOpenCodeCategory(trace.annotation.category_name || '');
+      setOpenCodeSeverity(trace.annotation.severity || 'medium');
+    } else {
+      setOpenCodeIsFailure(true);
+      setOpenCodeNote('');
+      setOpenCodeCategory('');
+      setOpenCodeSeverity('medium');
+    }
+  };
+
+  const handleSeedTraces = async () => {
+    setIsSeedingTraces(true);
+    try {
+      const res = await fetch(`${API_BASE}/error-analysis/seed`, { method: 'POST' });
+      if (res.ok) {
+        await fetchTraces();
+        await fetchTaxonomySummary();
+      }
+    } catch (e) {
+      console.error("Error seeding traces:", e);
+    } finally {
+      setIsSeedingTraces(false);
+    }
+  };
+
+  const handleSaveAnnotation = async () => {
+    if (!selectedTrace) return;
+    if (openCodeIsFailure && !openCodeNote.trim()) {
+      alert("Please write one honest sentence about what went wrong before saving!");
+      return;
+    }
+    setIsSavingAnnotation(true);
+    try {
+      const res = await fetch(`${API_BASE}/traces/${selectedTrace.id}/annotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_failure: openCodeIsFailure,
+          honest_note: openCodeNote,
+          category_name: openCodeCategory || (openCodeIsFailure ? "Unclassified Failure" : null),
+          severity: openCodeSeverity
+        })
+      });
+      if (res.ok) {
+        await fetchTraces();
+        await fetchTaxonomySummary();
+      }
+    } catch (e) {
+      console.error("Error saving annotation:", e);
+    } finally {
+      setIsSavingAnnotation(false);
+    }
+  };
+
+  const handleDeleteAnnotation = async () => {
+    if (!selectedTrace) return;
+    try {
+      const res = await fetch(`${API_BASE}/traces/${selectedTrace.id}/annotate`, { method: 'DELETE' });
+      if (res.ok) {
+        await fetchTraces();
+        await fetchTaxonomySummary();
+      }
+    } catch (e) {
+      console.error("Error deleting annotation:", e);
+    }
+  };
+
+  const handleSetFixTarget = async (categoryName: string, predictionText?: string) => {
+    setIsSavingPrediction(true);
+    try {
+      const textToSave = predictionText !== undefined ? predictionText : targetPredictionInput;
+      const res = await fetch(`${API_BASE}/error-analysis/target`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category_name: categoryName,
+          prediction: textToSave
+        })
+      });
+      if (res.ok) {
+        await fetchTaxonomySummary();
+      }
+    } catch (e) {
+      console.error("Error setting fix target:", e);
+    } finally {
+      setIsSavingPrediction(false);
+    }
+  };
 
   const handleInspectQuery = async (queryToTest?: string) => {
     const query = queryToTest || inspectQuery;
@@ -227,7 +380,7 @@ export default function App() {
 
   const handleStartChat = async (agent: 'general' | 'technical' | 'billing' = 'general', initialPrompt?: string) => {
     const titles = {
-      general: 'General Support Session',
+      general: 'New Chat Session',
       technical: 'Tech Helpdesk Session',
       billing: 'Billing & Invoice Session'
     };
@@ -249,7 +402,6 @@ export default function App() {
         setActiveConvId(newConv.id);
         setSelectedAgent(agent);
         setMessages([]);
-        setShowAgentModal(false);
 
         if (initialPrompt) {
           setTimeout(() => {
@@ -646,9 +798,9 @@ export default function App() {
   // Agent profiles
   const agents = {
     general: {
-      title: 'General Support',
-      desc: 'Get answers to queries about general policies, account operations, and overall services.',
-      icon: <HelpCircle style={{ color: '#FFFFFF' }} size={22} />,
+      title: 'AI Assistant',
+      desc: 'How can I help you today? Ask questions, search knowledge, or get instant answers.',
+      icon: <Bot style={{ color: '#FFFFFF' }} size={22} />,
       classKey: 'general',
       badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.08)', color: '#FFFFFF', borderColor: 'rgba(255, 255, 255, 0.2)' },
       suggestions: [
@@ -705,7 +857,10 @@ export default function App() {
           </div>
           
           <button 
-            onClick={() => setShowAgentModal(true)}
+            onClick={() => {
+              setCurrentView('chat');
+              handleStartChat(selectedAgent);
+            }}
             className="btn-3d btn-3d-secondary"
             style={{ padding: '8px', borderRadius: '10px' }}
             title="New Chat Session"
@@ -719,9 +874,9 @@ export default function App() {
           <button
             onClick={() => setCurrentView('chat')}
             className={`btn-3d ${currentView === 'chat' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
-            style={{ flex: 1, padding: '6px 8px', borderRadius: '8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+            style={{ flex: 1, padding: '6px 4px', borderRadius: '8px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}
           >
-            <Bot size={12} /> Chat
+            <Bot size={11} /> Chat
           </button>
           <button
             onClick={() => {
@@ -729,9 +884,9 @@ export default function App() {
               fetchDocuments();
             }}
             className={`btn-3d ${currentView === 'kb' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
-            style={{ flex: 1, padding: '6px 8px', borderRadius: '8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+            style={{ flex: 1, padding: '6px 4px', borderRadius: '8px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}
           >
-            <BookOpen size={12} /> Knowledge
+            <BookOpen size={11} /> KB
           </button>
           <button
             onClick={() => {
@@ -739,9 +894,20 @@ export default function App() {
               if (!inspectResult) handleInspectQuery("ERR-4032");
             }}
             className={`btn-3d ${currentView === 'debugger' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
-            style={{ flex: 1, padding: '6px 8px', borderRadius: '8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}
+            style={{ flex: 1, padding: '6px 4px', borderRadius: '8px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}
           >
-            <Wrench size={12} /> RAG Debugger
+            <Wrench size={11} /> RAG Debug
+          </button>
+          <button
+            onClick={() => {
+              setCurrentView('error_analysis');
+              fetchTraces();
+              fetchTaxonomySummary();
+            }}
+            className={`btn-3d ${currentView === 'error_analysis' ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
+            style={{ flex: 1, padding: '6px 4px', borderRadius: '8px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}
+          >
+            <AlertTriangle size={11} /> Error Eval
           </button>
         </div>
 
@@ -810,7 +976,7 @@ export default function App() {
       {/* 2. MAIN CHAT AREA */}
       <main className="chat-main">
         
-        {/* Active Chat Header */}
+        {/* Active Header Bar */}
         {currentView === 'kb' ? (
           <div className="chat-header">
             <div className="chat-header-left">
@@ -821,6 +987,31 @@ export default function App() {
                 <h3 className="chat-header-title">Knowledge Base</h3>
                 <span className="chat-header-subtitle">Manage documents for local RAG query indexing</span>
               </div>
+            </div>
+          </div>
+        ) : currentView === 'error_analysis' ? (
+          <div className="chat-header">
+            <div className="chat-header-left">
+              <div className="chat-header-avatar" style={{ background: 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)' }}>
+                <AlertTriangle size={18} style={{ color: '#FFFFFF' }} />
+              </div>
+              <div>
+                <h3 className="chat-header-title">Week 5 · Error Analysis & Evals</h3>
+                <span className="chat-header-subtitle">Read traces by hand, open-code notes, rank problem taxonomy (Frequency × Severity)</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                onClick={handleSeedTraces}
+                disabled={isSeedingTraces}
+                className="btn-3d btn-3d-secondary"
+                style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                title="Seed 20 realistic trace examples across Tracks A-F"
+              >
+                {isSeedingTraces ? <RefreshCw size={12} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={12} />}
+                Seed 20 Sample Traces
+              </button>
             </div>
           </div>
         ) : (
@@ -1126,6 +1317,663 @@ export default function App() {
                   </div>
                 )}
               </div>
+            ) : currentView === 'error_analysis' ? (
+              /* WEEK 5 EVALS & ERROR ANALYSIS VIEW */
+              <div className="error-analysis-container animate-scale-in" style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* 1. TOP STATS OVERVIEW HEADER CARDS */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Sampled Traces Read</span>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF' }}>
+                      {taxonomySummary ? `${taxonomySummary.sample_size} / 20` : '0 / 20'}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#10B981', display: 'block', marginTop: '2px' }}>Fair sample collected</span>
+                  </div>
+
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Pass vs Failure Rate</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#10B981', background: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                        ✓ {taxonomySummary ? taxonomySummary.passes_count : 0} Pass
+                      </span>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#EF4444', background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                        ✕ {taxonomySummary ? taxonomySummary.failures_count : 0} Fail
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Open-Coded Notes</span>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#38BDF8' }}>
+                      {taxonomySummary ? taxonomySummary.annotated_count : 0} Notes
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>Written before grouping</span>
+                  </div>
+
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Top Ranked Problem</span>
+                    <span style={{ fontSize: '13px', fontWeight: '800', color: '#F59E0B', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? `#1 ${taxonomySummary.ranked_taxonomy[0].category_name}` : 'None'}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>
+                      Score (F×S): {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? taxonomySummary.ranked_taxonomy[0].score : 0}
+                    </span>
+                  </div>
+
+                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: '700', display: 'block', marginBottom: '4px' }}>Target Fix Selected</span>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#FFFFFF', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {taxonomySummary && taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'No Target Set'}
+                    </span>
+                    <span style={{ fontSize: '10px', color: taxonomySummary && taxonomySummary.chosen_target?.prediction ? '#10B981' : '#F59E0B', display: 'block', marginTop: '2px' }}>
+                      {taxonomySummary && taxonomySummary.chosen_target?.prediction ? '✓ Prediction written' : '⚠️ Awaiting prediction'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. SUB-NAVIGATION TABS */}
+                <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', gap: '8px' }}>
+                  <button
+                    onClick={() => setEaSubTab('traces')}
+                    style={{
+                      padding: '10px 18px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: eaSubTab === 'traces' ? '2px solid #38BDF8' : '2px solid transparent',
+                      color: eaSubTab === 'traces' ? '#38BDF8' : '#A3A3A3',
+                      fontWeight: '700',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Search size={14} /> 1. Hand-Read Traces & Open Code ({traces.length})
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setEaSubTab('taxonomy');
+                      fetchTaxonomySummary();
+                    }}
+                    style={{
+                      padding: '10px 18px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: eaSubTab === 'taxonomy' ? '2px solid #A855F7' : '2px solid transparent',
+                      color: eaSubTab === 'taxonomy' ? '#A855F7' : '#A3A3A3',
+                      fontWeight: '700',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Layers size={14} /> 2. Ranked Error Taxonomy (Frequency × Severity)
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setEaSubTab('report');
+                      fetchTaxonomySummary();
+                    }}
+                    style={{
+                      padding: '10px 18px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: eaSubTab === 'report' ? '2px solid #10B981' : '2px solid transparent',
+                      color: eaSubTab === 'report' ? '#10B981' : '#A3A3A3',
+                      fontWeight: '700',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Award size={14} /> 3. Deliverable & Mentor Review Report
+                  </button>
+                </div>
+
+                {/* 3. SUB-TAB 1: TRACES & OPEN CODING INTERFACE */}
+                {eaSubTab === 'traces' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    
+                    {/* Track & Status Filters */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.02)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Filter size={12} /> Filter Track:
+                      </span>
+                      {[
+                        { code: 'ALL', label: 'All Tracks' },
+                        { code: 'A', label: 'Track A: Support' },
+                        { code: 'B', label: 'Track B: Recipes' },
+                        { code: 'C', label: 'Track C: HR Policy' },
+                        { code: 'D', label: 'Track D: Insurance' },
+                        { code: 'E', label: 'Track E: Dev Docs' },
+                        { code: 'F', label: 'Track F: Legal' }
+                      ].map((t) => (
+                        <button
+                          key={t.code}
+                          onClick={() => {
+                            setEaTrackFilter(t.code);
+                            fetchTraces(t.code, eaStatusFilter);
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            fontSize: '11px',
+                            border: '1px solid',
+                            cursor: 'pointer',
+                            background: eaTrackFilter === t.code ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
+                            borderColor: eaTrackFilter === t.code ? '#38BDF8' : 'rgba(255,255,255,0.08)',
+                            color: eaTrackFilter === t.code ? '#38BDF8' : '#A3A3A3',
+                            fontWeight: eaTrackFilter === t.code ? 'bold' : 'normal'
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+
+                      <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold' }}>Status:</span>
+                        {['all', 'unannotated', 'failure', 'pass'].map((st) => (
+                          <button
+                            key={st}
+                            onClick={() => {
+                              setEaStatusFilter(st);
+                              fetchTraces(eaTrackFilter, st);
+                            }}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontSize: '10px',
+                              textTransform: 'capitalize',
+                              cursor: 'pointer',
+                              background: eaStatusFilter === st ? '#FFFFFF' : 'rgba(255,255,255,0.05)',
+                              color: eaStatusFilter === st ? '#000000' : '#A3A3A3',
+                              fontWeight: 'bold',
+                              border: 'none'
+                            }}
+                          >
+                            {st}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Split View: Trace List + Inspector Form */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '16px', alignItems: 'start' }}>
+                      
+                      {/* Left: Scrollable List of 20 Sampled Traces */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '680px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {isFetchingTraces ? (
+                          <div style={{ padding: '40px', textAlign: 'center', color: '#A3A3A3', fontSize: '12px' }}>
+                            <RefreshCw size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                            <div style={{ marginTop: '8px' }}>Fetching traces...</div>
+                          </div>
+                        ) : traces.length === 0 ? (
+                          <div style={{ padding: '30px', textAlign: 'center', color: '#A3A3A3', fontSize: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
+                            No traces match criteria. Click "Seed 20 Sample Traces" to populate!
+                          </div>
+                        ) : (
+                          traces.map((trace) => {
+                            const isSelected = selectedTrace && selectedTrace.id === trace.id;
+                            const anno = trace.annotation;
+                            return (
+                              <div
+                                key={trace.id}
+                                onClick={() => loadTraceIntoForm(trace)}
+                                style={{
+                                  padding: '12px 14px',
+                                  borderRadius: '12px',
+                                  background: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                                  border: isSelected ? '1px solid #38BDF8' : '1px solid rgba(255, 255, 255, 0.06)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 6px', borderRadius: '4px' }}>
+                                    Track {trace.track_code}
+                                  </span>
+                                  
+                                  {anno ? (
+                                    anno.is_failure ? (
+                                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#EF4444', background: 'rgba(239,68,68,0.15)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                        ✕ Fail ({anno.severity})
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#10B981', background: 'rgba(16,185,129,0.15)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                        ✓ Pass
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span style={{ fontSize: '10px', color: '#A3A3A3', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
+                                      Unannotated
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: '#FFFFFF', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                  {trace.query}
+                                </div>
+
+                                {anno && anno.honest_note && (
+                                  <div style={{ fontSize: '11px', color: '#A3A3A3', fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '6px', marginTop: '6px' }}>
+                                    "{anno.honest_note}"
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Right: Detailed Complete Trace Inspector & Open Coding Form */}
+                      {selectedTrace ? (
+                        <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          
+                          {/* Top Bar Details */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#FFFFFF' }}>Trace Details: {selectedTrace.id}</span>
+                              <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#E2E8F0' }}>Track {selectedTrace.track_code}</span>
+                            </div>
+                            <span style={{ fontSize: '11px', color: '#A3A3A3' }}>Latency: {selectedTrace.latency_ms}ms</span>
+                          </div>
+
+                          {/* Section A: User Question */}
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#38BDF8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>1. User Request / Question</span>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#FFFFFF', background: 'rgba(0,0,0,0.4)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                              {selectedTrace.query}
+                            </div>
+                          </div>
+
+                          {/* Section B: Retrieved Context Chunks */}
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#A855F7', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>2. What the App Fetched (Retrieved Chunks)</span>
+                            {(() => {
+                              try {
+                                const chunks = selectedTrace.retrieved_chunks_json ? JSON.parse(selectedTrace.retrieved_chunks_json) : [];
+                                if (!chunks || chunks.length === 0) {
+                                  return (
+                                    <div style={{ fontSize: '12px', color: '#EF4444', padding: '10px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px' }}>
+                                      ⚠️ No reference chunks were retrieved for this query.
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {chunks.map((c: any, idx: number) => (
+                                      <div key={idx} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '10px', fontSize: '12px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38BDF8', fontWeight: 'bold', marginBottom: '4px' }}>
+                                          <span>File: {c.filename}</span>
+                                          {c.score && <span>Score: {c.score}</span>}
+                                        </div>
+                                        <p style={{ margin: 0, color: '#A3A3A3', fontFamily: 'monospace' }}>"{c.content}"</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              } catch {
+                                return <div style={{ fontSize: '12px', color: '#A3A3A3' }}>Raw Context: {selectedTrace.retrieved_chunks_json}</div>;
+                              }
+                            })()}
+                          </div>
+
+                          {/* Section C: What the App Answered */}
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>3. What the App Answered</span>
+                            <div style={{ fontSize: '12px', color: '#E2E8F0', background: 'rgba(0,0,0,0.4)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                              {selectedTrace.llm_response}
+                            </div>
+                          </div>
+
+                          {/* Section D: OPEN CODING & EVALUATION FORM */}
+                          <div style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '14px', padding: '16px', marginTop: '6px' }}>
+                            <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <ShieldAlert size={16} style={{ color: '#38BDF8' }} /> Hand-Coding & Error Annotation
+                            </h4>
+                            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#A3A3A3' }}>
+                              Requirement: Read the answer honestly and write <strong>one sentence about what went wrong</strong> before assigning problem category.
+                            </p>
+
+                            {/* Pass / Fail Toggle */}
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                              <button
+                                type="button"
+                                onClick={() => setOpenCodeIsFailure(false)}
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid',
+                                  cursor: 'pointer',
+                                  background: !openCodeIsFailure ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
+                                  borderColor: !openCodeIsFailure ? '#10B981' : 'rgba(255,255,255,0.1)',
+                                  color: !openCodeIsFailure ? '#10B981' : '#A3A3A3',
+                                  fontWeight: 'bold',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                ✓ Pass (Answer Accurate)
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setOpenCodeIsFailure(true)}
+                                style={{
+                                  flex: 1,
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid',
+                                  cursor: 'pointer',
+                                  background: openCodeIsFailure ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.03)',
+                                  borderColor: openCodeIsFailure ? '#EF4444' : 'rgba(255,255,255,0.1)',
+                                  color: openCodeIsFailure ? '#EF4444' : '#A3A3A3',
+                                  fontWeight: 'bold',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                ✕ Failure (Has Issue)
+                              </button>
+                            </div>
+
+                            {/* Honest Sentence Note Input */}
+                            <div style={{ marginBottom: '12px' }}>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                                Honest Open-Coding Note (1 Sentence):
+                              </label>
+                              <textarea
+                                value={openCodeNote}
+                                onChange={(e) => setOpenCodeNote(e.target.value)}
+                                placeholder="Describe exactly what failed (e.g. LLM recommended 1:1 almond flour swap ignoring retrieved gluten warning)..."
+                                style={{ width: '100%', height: '60px', padding: '10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px', fontFamily: 'inherit' }}
+                              />
+                            </div>
+
+                            {openCodeIsFailure && (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '12px', marginBottom: '14px' }}>
+                                {/* Category Name */}
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                                    Problem Category Name:
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={openCodeCategory}
+                                    onChange={(e) => setOpenCodeCategory(e.target.value)}
+                                    placeholder="e.g. Hallucination / Fact Distortion"
+                                    list="category-suggestions"
+                                    style={{ width: '100%', padding: '8px 10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px' }}
+                                  />
+                                  <datalist id="category-suggestions">
+                                    <option value="Hallucination / Fact Distortion" />
+                                    <option value="Context Ignoring / Misleading Advice" />
+                                    <option value="Missing Context / Ungrounded Generation" />
+                                    <option value="Incorrect Technical Instructions" />
+                                    <option value="Formatting / JSON Structure Failure" />
+                                  </datalist>
+                                </div>
+
+                                {/* Severity Selector */}
+                                <div>
+                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                                    Severity (S):
+                                  </label>
+                                  <select
+                                    value={openCodeSeverity}
+                                    onChange={(e: any) => setOpenCodeSeverity(e.target.value)}
+                                    style={{ width: '100%', padding: '8px 10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px' }}
+                                  >
+                                    <option value="low">Low (1x)</option>
+                                    <option value="medium">Medium (2x)</option>
+                                    <option value="high">High (3x)</option>
+                                    <option value="critical">Critical (4x)</option>
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                              {selectedTrace.annotation && (
+                                <button
+                                  type="button"
+                                  onClick={handleDeleteAnnotation}
+                                  className="btn-3d btn-3d-secondary"
+                                  style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px', color: '#EF4444' }}
+                                >
+                                  Clear Annotation
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={handleSaveAnnotation}
+                                disabled={isSavingAnnotation}
+                                className="btn-3d btn-3d-primary"
+                                style={{ padding: '6px 16px', borderRadius: '8px', fontSize: '11px' }}
+                              >
+                                {isSavingAnnotation ? 'Saving...' : 'Save Annotation'}
+                              </button>
+                            </div>
+                          </div>
+
+                        </div>
+                      ) : (
+                        <div style={{ padding: '60px', textAlign: 'center', color: '#A3A3A3', background: 'rgba(255,255,255,0.02)', borderRadius: '16px' }}>
+                          Select a trace from the left panel to inspect and open code.
+                        </div>
+                      )}
+
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 4. SUB-TAB 2: RANKED ERROR TAXONOMY (F × S) */}
+                {eaSubTab === 'taxonomy' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px' }}>
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>
+                        Ranked Error Taxonomy Matrix (Frequency × Severity)
+                      </h4>
+                      <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#A3A3A3' }}>
+                        Calculated ranking: <strong>Error Score = Frequency (F) × Average Severity Weight (S)</strong>. Surface what hurts most first.
+                      </p>
+
+                      {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {taxonomySummary.ranked_taxonomy.map((item: any) => {
+                            const isTarget = item.is_chosen_target;
+                            return (
+                              <div
+                                key={item.category_name}
+                                style={{
+                                  background: isTarget ? 'rgba(168, 85, 247, 0.08)' : 'rgba(0,0,0,0.3)',
+                                  border: isTarget ? '1px solid #A855F7' : '1px solid rgba(255,255,255,0.06)',
+                                  borderRadius: '14px',
+                                  padding: '16px'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span style={{
+                                      fontSize: '14px',
+                                      fontWeight: '900',
+                                      color: item.rank === 1 ? '#F59E0B' : '#E2E8F0',
+                                      background: 'rgba(255,255,255,0.1)',
+                                      width: '28px',
+                                      height: '28px',
+                                      borderRadius: '50%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center'
+                                    }}>
+                                      #{item.rank}
+                                    </span>
+                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#FFFFFF' }}>{item.category_name}</span>
+                                    {isTarget && (
+                                      <span style={{ fontSize: '11px', background: '#A855F7', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                                        ★ Chosen #1 Fix Target
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                    <div style={{ textAlign: 'right' }}>
+                                      <span style={{ display: 'block', fontSize: '10px', color: '#A3A3A3' }}>Freq × Sev Score</span>
+                                      <span style={{ fontSize: '18px', fontWeight: '900', color: '#F59E0B' }}>{item.score}</span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleSetFixTarget(item.category_name)}
+                                      className={`btn-3d ${isTarget ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
+                                      style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px' }}
+                                    >
+                                      {isTarget ? 'Selected Target' : 'Set as #1 Target'}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94A3B8', marginBottom: '10px' }}>
+                                  <span>Frequency (F): <strong>{item.frequency} trace(s)</strong></span>
+                                  <span>Avg Severity Weight (S): <strong>{item.avg_severity_weight}x</strong></span>
+                                </div>
+
+                                {/* List of Honest Notes under this category */}
+                                <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '10px 12px' }}>
+                                  <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Honest Open-Coding Notes:</span>
+                                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#E2E8F0', lineHeight: '1.5' }}>
+                                    {item.honest_notes.map((note: string, idx: number) => (
+                                      <li key={idx} style={{ marginBottom: '2px' }}>{note}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#A3A3A3', fontSize: '12px' }}>
+                          No annotated failure categories yet. Hand-read traces in Sub-Tab 1 to build the taxonomy!
+                        </div>
+                      )}
+                    </div>
+
+                    {/* TARGET FIX PREDICTION EDITOR */}
+                    {taxonomySummary && taxonomySummary.chosen_target && (
+                      <div style={{ background: 'rgba(168, 85, 247, 0.06)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '16px', padding: '20px' }}>
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: 'bold', color: '#A855F7', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Target size={16} /> Target Fix Selection & Written Prediction
+                        </h4>
+                        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#E2E8F0' }}>
+                          Target Category: <strong>{taxonomySummary.chosen_target.category_name}</strong>
+                        </p>
+
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                            Write Prediction First (What do you expect to happen after fixing this problem?):
+                          </label>
+                          <textarea
+                            value={targetPredictionInput}
+                            onChange={(e) => setTargetPredictionInput(e.target.value)}
+                            placeholder="e.g. By reinforcing strict context grounding in system prompt and lowering temperature, we predict hallucination rate will drop by 75% on factual policy queries..."
+                            style={{ width: '100%', height: '80px', padding: '10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px', fontFamily: 'inherit' }}
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => handleSetFixTarget(taxonomySummary.chosen_target.category_name, targetPredictionInput)}
+                          disabled={isSavingPrediction}
+                          className="btn-3d btn-3d-primary"
+                          style={{ padding: '6px 16px', borderRadius: '8px', fontSize: '11px', background: '#A855F7', borderColor: '#A855F7' }}
+                        >
+                          {isSavingPrediction ? 'Saving...' : 'Save Written Prediction'}
+                        </button>
+                      </div>
+                    )}
+
+                  </div>
+                )}
+
+                {/* 5. SUB-TAB 3: DELIVERABLE & MENTOR REVIEW REPORT */}
+                {eaSubTab === 'report' && taxonomySummary && (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px' }}>
+                      <div>
+                        <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Week 5 Deliverable · Mentor Review Summary</h3>
+                        <span style={{ fontSize: '12px', color: '#A3A3A3' }}>Evaluated Task Brief: Traces Hand-Read, Open Coding, Ranked Taxonomy, Chosen Target & Written Prediction</span>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const markdownReport = `# Week 5 Module 3 Deliverable: Error Analysis & Ranked Taxonomy
+
+## 1. Fair Sample Audit
+- Total Traces Read by Hand: ${taxonomySummary.sample_size} / 20 Traces
+- Pass Count: ${taxonomySummary.passes_count}
+- Failure Count: ${taxonomySummary.failures_count}
+
+## 2. Honest Open-Coding Notes Log
+${traces.filter(t => t.annotation?.is_failure).map(t => `- [Track ${t.track_code}] Query: "${t.query}"\n  Honest Note: "${t.annotation?.honest_note}"\n  Category: ${t.annotation?.category_name} (Severity: ${t.annotation?.severity})`).join('\n\n')}
+
+## 3. Ranked Error Taxonomy Table (Frequency x Severity)
+${taxonomySummary.ranked_taxonomy.map((item: any) => `### Rank #${item.rank}: ${item.category_name}
+- Score: ${item.score} (Frequency: ${item.frequency}, Avg Severity Weight: ${item.avg_severity_weight}x)
+- Honest Notes:
+${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
+
+## 4. Chosen Fix Target & Written Prediction
+- Selected #1 Target: ${taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'None'}
+- Written Prediction: "${taxonomySummary.chosen_target?.prediction || 'N/A'}"
+`;
+                          navigator.clipboard.writeText(markdownReport);
+                          setCopyReportSuccess(true);
+                          setTimeout(() => setCopyReportSuccess(false), 2000);
+                        }}
+                        className="btn-3d btn-3d-primary"
+                        style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        {copyReportSuccess ? <Check size={14} /> : <Copy size={14} />}
+                        {copyReportSuccess ? 'Copied to Clipboard!' : 'Copy Deliverable Markdown'}
+                      </button>
+                    </div>
+
+                    {/* Deliverable Document Preview */}
+                    <div style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '20px', fontSize: '13px', color: '#E2E8F0', lineHeight: '1.6' }}>
+                      <h4 style={{ color: '#38BDF8', marginTop: 0 }}>✓ Mentor Check 1: Fair Random Sample Audit</h4>
+                      <p>Read <strong>{taxonomySummary.sample_size} real traces</strong> across Tracks A-F. Identified {taxonomySummary.passes_count} accurate passes and {taxonomySummary.failures_count} real failures.</p>
+
+                      <h4 style={{ color: '#A855F7', marginTop: '16px' }}>✓ Mentor Check 2: Honest Notes Per Failure (Before Categorization)</h4>
+                      <p>Every failure trace was evaluated individually with one honest sentence note describing what went wrong before grouping into categories.</p>
+
+                      <h4 style={{ color: '#F59E0B', marginTop: '16px' }}>✓ Mentor Check 3: Ranked Error Taxonomy Table (Frequency × Severity)</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                        {taxonomySummary.ranked_taxonomy.map((item: any) => (
+                          <div key={item.category_name} style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '8px', borderLeft: item.is_chosen_target ? '4px solid #A855F7' : '4px solid #38BDF8' }}>
+                            <div style={{ fontWeight: 'bold', color: '#FFFFFF' }}>Rank #{item.rank}: {item.category_name} (Score: {item.score})</div>
+                            <div style={{ fontSize: '11px', color: '#A3A3A3' }}>Freq: {item.frequency} traces | Sev Weight: {item.avg_severity_weight}x</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <h4 style={{ color: '#10B981', marginTop: '16px' }}>✓ Mentor Check 4: Chosen Target & Written Prediction</h4>
+                      <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '14px', borderRadius: '10px' }}>
+                        <div style={{ fontWeight: 'bold', color: '#10B981' }}>Chosen #1 Target: {taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'Not set'}</div>
+                        <p style={{ margin: '6px 0 0 0', fontStyle: 'italic', color: '#FFFFFF' }}>"{taxonomySummary.chosen_target?.prediction || 'No prediction recorded yet.'}"</p>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
             ) : (
               !activeConvId || isLoadingMessages ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#A3A3A3', gap: '12px', padding: '100px 0' }}>
@@ -1148,39 +1996,6 @@ export default function App() {
                         </p>
                       </div>
 
-                      {/* Agent Selection Cards */}
-                      <div style={{ width: '100%', maxWidth: '720px', margin: '10px 0' }}>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#737373', fontWeight: '700', marginBottom: '14px' }}>
-                          Select Support Desk
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                          {(['general', 'technical', 'billing'] as const).map((agentKey) => {
-                            const info = agents[agentKey];
-                            const isSelected = selectedAgent === agentKey;
-                            return (
-                              <div 
-                                key={agentKey}
-                                onClick={() => handleStartChat(agentKey)}
-                                style={{
-                                  padding: '14px',
-                                  borderRadius: '14px',
-                                  background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                                  border: isSelected ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
-                                  cursor: 'pointer',
-                                  textAlign: 'left',
-                                  transition: 'all 0.2s ease'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                  {info.icon}
-                                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#FFFFFF' }}>{info.title}</span>
-                                </div>
-                                <p style={{ fontSize: '11px', color: '#A3A3A3', lineHeight: '1.4' }}>{info.desc}</p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
 
                       {/* Suggestions list for current agent */}
                       <div className="welcome-suggestions-list">
@@ -1348,57 +2163,7 @@ export default function App() {
 
       </main>
 
-      {/* 3. NEW CHAT AGENT SELECTOR MODAL */}
-      {showAgentModal && (
-        <div className="modal-overlay">
-          <div className="modal-content animate-scale-in" style={{ maxWidth: '480px' }}>
-            <h3 className="modal-title">New Chat Session</h3>
-            <p className="modal-desc">
-              Choose an AI Agent Support Desk to start your conversation.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-              {(['general', 'technical', 'billing'] as const).map((agentKey) => {
-                const info = agents[agentKey];
-                return (
-                  <button
-                    key={agentKey}
-                    onClick={() => handleStartChat(agentKey)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '12px 16px',
-                      borderRadius: '12px',
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      color: '#FFFFFF',
-                      cursor: 'pointer',
-                      textAlign: 'left'
-                    }}
-                  >
-                    <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.05)' }}>
-                      {info.icon}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '13px', fontWeight: '700' }}>{info.title}</span>
-                      <span style={{ fontSize: '11px', color: '#A3A3A3', marginTop: '2px' }}>{info.desc}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="modal-actions">
-              <button 
-                onClick={() => setShowAgentModal(false)}
-                className="btn-3d btn-3d-secondary"
-                style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* 4. CUSTOM DELETE CONFIRMATION MODAL */}
       {showDeleteConfirm && (

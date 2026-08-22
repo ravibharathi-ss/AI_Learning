@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 from typing import AsyncGenerator, List, Dict
 from openai import OpenAI
@@ -25,11 +26,11 @@ class OllamaService:
             self.client = OpenAI(base_url=ollama_url, api_key="ollama")
             print(f"Using local Ollama ({self.model_name}) with CPU context optimization.")
 
-    def _get_system_prompt(self, agent_type: str) -> str:
-        speed_instruction = " Be extremely concise, direct, and fast. Give short, structured 2-4 bullet answers or code blocks without conversational intro/outro fluff."
+    def _get_system_prompt(self, agent_type: str, has_rag_context: bool = False) -> str:
+        speed_instruction = " Be concise, direct, and structured."
         prompts = {
             "general": (
-                "You are a helpful and efficient AI assistant." + speed_instruction
+                "You are an AI Support Assistant." + speed_instruction
             ),
             "technical": (
                 "You are an IT and Technical Support Specialist." + speed_instruction +
@@ -39,7 +40,26 @@ class OllamaService:
                 "You are a Billing and Accounts Specialist." + speed_instruction
             )
         }
-        return prompts.get(agent_type, prompts["general"])
+        base_prompt = prompts.get(agent_type, prompts["general"])
+        
+        if has_rag_context:
+            return (
+                f"{base_prompt}\n\n"
+                "STRICT KNOWLEDGE BASE ENFORCEMENT:\n"
+                "1. If the user gives a greeting (e.g., 'Hello', 'Hi'), respond politely and offer assistance with knowledge base topics.\n"
+                "2. You must ONLY answer questions using the facts provided in the REFERENCE DOCUMENTS below.\n"
+                "3. Do NOT answer general world knowledge questions, write code/essays unrelated to the context, or extrapolate beyond the provided facts.\n"
+                "4. If the question cannot be answered using the provided reference documents, politely state that you can only answer questions based on the official knowledge base documents and that the requested information is not available."
+            )
+        else:
+            return (
+                f"{base_prompt}\n\n"
+                "STRICT KNOWLEDGE BASE ENFORCEMENT:\n"
+                "1. If the user gives a greeting (e.g., 'Hello', 'Hi'), greet them briefly and invite them to ask questions about our knowledge base.\n"
+                "2. No matching documents were found in the knowledge base for this query.\n"
+                "3. You are strictly restricted to answering questions from the uploaded knowledge base documents only. Do NOT answer general knowledge, coding, or unrelated questions.\n"
+                "4. Politely inform the user that you only answer questions backed by the knowledge base documents and no relevant documentation was found for their request."
+            )
 
     async def get_chat_stream(
         self,
@@ -48,20 +68,31 @@ class OllamaService:
         rag_context: str = ""
     ) -> AsyncGenerator[str, None]:
         """
-        Streams responses with high-speed sampling.
+        Streams responses with high-speed sampling, instant greeting fast-path, and strict RAG enforcement.
         """
-        system_prompt = self._get_system_prompt(agent_type)
-        if rag_context:
+        # Instant Fast-Path for Greetings / Pleasantries
+        latest_user_text = messages[-1]["content"].strip().lower() if messages else ""
+        cleaned_latest = re.sub(r'[^\w\s]', '', latest_user_text).strip()
+        greeting_words = {'hi', 'hello', 'hey', 'hola', 'greetings', 'good morning', 'good evening', 'good afternoon', 'how are you', 'who are you', 'help'}
+        if cleaned_latest in greeting_words or (len(cleaned_latest.split()) <= 2 and any(cleaned_latest.startswith(g) for g in ['hi', 'hello', 'hey'])):
+            instant_greeting = (
+                "Hello! 👋 I am your AI Support Assistant.\n\n"
+                "I am here to help answer your questions based on our knowledge base documents. How can I assist you today?"
+            )
+            for word in instant_greeting.split(" "):
+                yield word + " "
+                await asyncio.sleep(0.015)
+            return
+
+        has_rag = bool(rag_context and rag_context.strip())
+        system_prompt = self._get_system_prompt(agent_type, has_rag_context=has_rag)
+        if has_rag:
             system_prompt += (
-                "\n\nKNOWLEDGE BASE REFERENCE CONTEXT:\n"
-                f"--- REFERENCE DOCUMENTS ---\n{rag_context}\n---------------------------\n"
-                "INSTRUCTIONS:\n"
-                "1. If reference documents contain facts relevant to the user's question, use them concisely.\n"
-                "2. If the question is general (e.g., technical guides, software installation like Docker, programming), answer directly using pre-trained knowledge in concise steps."
+                f"\n\n--- REFERENCE DOCUMENTS ---\n{rag_context}\n---------------------------"
             )
 
         payload = [{"role": "system", "content": system_prompt}]
-        for msg in messages[-6:]:
+        for msg in messages[-4:]:
             payload.append({"role": msg["role"], "content": msg["content"]})
 
         try:
@@ -73,10 +104,19 @@ class OllamaService:
                 "messages": payload,
                 "stream": True,
                 "temperature": 0.1,
-                "max_tokens": 150
+                "max_tokens": 120
             }
             if not self.use_cloud:
-                kwargs["extra_body"] = {"options": {"num_ctx": 1024, "num_thread": 8, "num_predict": 120}}
+                kwargs["extra_body"] = {
+                    "options": {
+                        "num_ctx": 512,
+                        "num_thread": 8,
+                        "num_predict": 90,
+                        "top_k": 20,
+                        "top_p": 0.9
+                    },
+                    "keep_alive": "15m"
+                }
 
             response = await loop.run_in_executor(
                 None,

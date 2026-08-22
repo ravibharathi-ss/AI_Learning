@@ -25,6 +25,7 @@ class RagService:
         # Initialize ChromaDB Vector Database
         self.chroma_path = os.getenv("CHROMA_DB_PATH", os.path.join(os.path.dirname(__file__), "..", "chroma_db"))
         self.collection = None
+        self._embed_cache: Dict[str, List[float]] = {}
         if CHROMA_AVAILABLE:
             try:
                 os.makedirs(self.chroma_path, exist_ok=True)
@@ -76,12 +77,20 @@ class RagService:
 
     def get_embedding(self, text: str) -> List[float]:
         """
-        Generates embedding vector using the dedicated Ollama embed model via /api/embed.
+        Generates embedding vector using the dedicated Ollama embed model via /api/embed with local caching.
         """
+        if not text or not text.strip():
+            return []
+
+        cache_key = text.strip().lower()
+        if cache_key in self._embed_cache:
+            return self._embed_cache[cache_key]
+
         url = f"{self.ollama_host}/api/embed"
         payload = {
             "model": self.embed_model,
-            "input": text
+            "input": text,
+            "keep_alive": "10m"
         }
 
         try:
@@ -92,10 +101,13 @@ class RagService:
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 res_json = json.loads(response.read().decode("utf-8"))
                 embeddings = res_json.get("embeddings", [])
-                return embeddings[0] if embeddings else []
+                if embeddings:
+                    self._embed_cache[cache_key] = embeddings[0]
+                    return embeddings[0]
+                return []
         except Exception as e:
             print(f"Error generating embedding via Ollama ({self.embed_model}): {str(e)}")
             return []
@@ -309,6 +321,16 @@ class RagService:
         """
         Performs Hybrid Retrieval using ChromaDB Vector Search + BM25 Keyword Search + RRF + Reranker.
         """
+        # Fast greeting / pleasantry bypass to avoid slow embedding calls
+        cleaned_lower = re.sub(r'[^\w\s]', '', query).strip().lower()
+        greeting_words = {'hi', 'hello', 'hey', 'hola', 'greetings', 'morning', 'evening', 'good morning', 'good evening', 'good afternoon', 'how are you', 'who are you', 'help', 'thanks', 'thank you', 'bye', 'goodbye'}
+        if cleaned_lower in greeting_words or (len(cleaned_lower.split()) <= 2 and any(cleaned_lower.startswith(g) for g in ['hi', 'hello', 'hey'])):
+            return {
+                "query_info": self.rewrite_query(query),
+                "chunks": [],
+                "raw_candidates": []
+            }
+
         all_chunks = db.query(models.DocumentChunk).all()
         if not all_chunks:
             return {
