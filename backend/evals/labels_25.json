@@ -1,0 +1,309 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "domain": "Legal Contracts",
+    "week": "Week 6 - Evals & Judge Validation",
+    "protocol": "Blind Hand-Labeling Protocol",
+    "timestamp": "2026-08-28T17:28:00Z",
+    "hand_labeled_by": "Legal Reviewer / Human Evaluator",
+    "total_cases": 26,
+    "regression_cases_count": 2,
+    "taxonomy_modes": [
+      "Hallucination / Fact Distortion",
+      "Context Ignoring / Misleading Advice",
+      "Missing Context / Ungrounded Generation",
+      "Incorrect Technical Instructions / Substantive Error",
+      "Ungrounded Defined Term / Reference Error"
+    ]
+  },
+  "cases": [
+    {
+      "id": "CASE-001",
+      "taxonomy_mode": "Hallucination / Fact Distortion",
+      "is_regression": true,
+      "regression_source": "Trace trace_seed_701 (Verbatim NDA Failure)",
+      "contract_title": "Mutual Non-Disclosure Agreement (Master NDA 2026)",
+      "contract_context": "Section 12.4 Governing Law and Jurisdiction: This Agreement and any disputes arising out of or related hereto shall be governed exclusively by and construed in accordance with the internal laws of the State of Delaware, without giving effect to any choice or conflict of law provision or rule. Each party irrevocably consents to the exclusive personal jurisdiction of the state and federal courts located in New Castle County, Delaware.",
+      "query": "What is the governing law and jurisdiction specified in the NDA?",
+      "model_answer": "This agreement is governed exclusively by the laws of the State of New York, and all disputes must be brought before courts in Manhattan.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Direct contradiction of Section 12.4. The contract designates Delaware and New Castle County, whereas the model hallucinated New York / Manhattan."
+    },
+    {
+      "id": "CASE-002",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": true,
+      "regression_source": "Trace trace_contract_rag_002 (Superseded Amendment Trap)",
+      "contract_title": "Master Services Agreement (Executed 2026 Restatement)",
+      "contract_context": "[SUPERSEDED Draft 2023]: In the event of breach, Provider liability is capped at $5,000,000. \n[EXECUTED 2026 RESTATEMENT Clause 8.2]: Section 8.2 Total aggregate liability of Provider arising under or related to this Agreement shall in no event exceed the total fees paid by Customer during the twelve (12) months preceding the incident giving rise to liability.",
+      "query": "What is the liability cap for Provider under the executed agreement?",
+      "model_answer": "Under the agreement terms, Provider liability is capped at $5,000,000 for any breach of contract.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Ignored the executed 2026 Restatement Clause 8.2 and retrieved superseded draft terms. Fails substantive accuracy."
+    },
+    {
+      "id": "CASE-003",
+      "taxonomy_mode": "Hallucination / Fact Distortion",
+      "is_regression": false,
+      "contract_title": "Enterprise Cloud SaaS Agreement",
+      "contract_context": "Section 4.1 Payment Terms: Invoices are issued monthly on the first business day. Customer shall pay all undisputed invoices within thirty (30) days of the invoice date. Late payments shall accrue interest at the rate of 1.5% per month or the maximum rate permitted by law.",
+      "query": "What are the payment terms and late fee interest rate?",
+      "model_answer": "Customer must pay undisputed invoices within thirty (30) days of invoice receipt. Late payments accrue interest at 1.5% per month.",
+      "human_verdict": "PASS",
+      "human_rationale": "Accurately represents both the 30-day payment term and 1.5% monthly late interest rate per Section 4.1."
+    },
+    {
+      "id": "CASE-004",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": false,
+      "contract_title": "Software License & Support Agreement",
+      "contract_context": "Clause 14.2 Termination for Convenience: Either party may terminate this Agreement without cause upon providing at least ninety (90) days prior written notice to the other party, provided that Customer remains liable for all prepaid, non-refundable subscription fees.",
+      "query": "Can Customer terminate for convenience and get a refund on prepaid fees?",
+      "model_answer": "Yes, Customer may terminate without cause upon 90 days notice and will receive a full prorated refund for all unused prepaid subscription fees.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Dangerous legal error. Clause 14.2 explicitly stipulates that prepaid fees are non-refundable, directly contradicted by the answer."
+    },
+    {
+      "id": "CASE-005",
+      "taxonomy_mode": "Ungrounded Defined Term / Reference Error",
+      "is_regression": false,
+      "contract_title": "Vendor Data Processing Addendum (DPA)",
+      "contract_context": "Section 1.1 Definitions: 'Personal Data Breach' means a breach of security leading to the accidental or unlawful destruction, loss, alteration, unauthorized disclosure of, or access to Customer Personal Data transmitted, stored or otherwise processed by Vendor.",
+      "query": "How is a security incident involving customer personal data defined?",
+      "model_answer": "Under Section 1.1, a 'Personal Data Breach' is defined as a security breach resulting in accidental or unlawful destruction, loss, alteration, unauthorized disclosure of, or access to Customer Personal Data.",
+      "human_verdict": "PASS",
+      "human_rationale": "Correctly references Section 1.1 and quotes the precise definition of Personal Data Breach."
+    },
+    {
+      "id": "CASE-006",
+      "taxonomy_mode": "Missing Context / Ungrounded Generation",
+      "is_regression": false,
+      "contract_title": "Professional Services SOW #4",
+      "contract_context": "Section 5 Deliverables and Acceptance: Customer shall have ten (10) business days following receipt of each Deliverable to inspect and accept or reject such Deliverable in writing.",
+      "query": "Is Vendor liable for consequential damages if milestone 3 is delayed?",
+      "model_answer": "Yes, Vendor is automatically subject to liquidated damages of $1,000 per calendar day for any delay in milestone 3.",
+      "human_verdict": "FAIL",
+      "human_rationale": "The SOW context contains no liquidated damages clause. The model fabricated a $1,000/day penalty out of thin air."
+    },
+    {
+      "id": "CASE-007",
+      "taxonomy_mode": "Incorrect Technical Instructions / Substantive Error",
+      "is_regression": false,
+      "contract_title": "Master Services Agreement - Standard Terms",
+      "contract_context": "Clause 9.1 Indemnification: Provider shall defend and indemnify Customer against third-party claims arising from Provider's gross negligence, willful misconduct, or infringement of intellectual property rights. Provider's total liability under this Clause 9.1 is not subject to the limitation of liability in Section 8.",
+      "query": "Is IP infringement indemnification capped under the general limitation of liability in Section 8?",
+      "model_answer": "No, under Clause 9.1, IP infringement indemnification claims are expressly uncapped and exempt from the Section 8 liability ceiling.",
+      "human_verdict": "PASS",
+      "human_rationale": "Legally accurate interpretation of the carve-out in Clause 9.1."
+    },
+    {
+      "id": "CASE-008",
+      "taxonomy_mode": "Hallucination / Fact Distortion",
+      "is_regression": false,
+      "contract_title": "Confidentiality Agreement",
+      "contract_context": "Section 3 Confidentiality Obligations: The Receiving Party shall protect Disclosing Party's Confidential Information with the same degree of care it uses for its own confidential information of like nature, but in no event less than a reasonable degree of care. These obligations shall survive for a period of three (3) years from the Effective Date.",
+      "query": "What is the required standard of care and survival period for confidential information?",
+      "model_answer": "The Receiving Party must use a strict fiduciary standard of utmost good faith, and obligations survive in perpetuity forever.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Model substituted 'reasonable standard of care' with 'strict fiduciary standard' and 3-year term with 'perpetuity'."
+    },
+    {
+      "id": "CASE-009",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": false,
+      "contract_title": "IP Assignment & Consulting Agreement",
+      "contract_context": "Section 6.2 Work Product: Consultant agrees that all Deliverables and Work Product created under this Agreement shall be deemed 'work made for hire' owned exclusively by Client upon creation. If any Work Product does not qualify as work made for hire, Consultant hereby irrevocably assigns all right, title, and interest to Client.",
+      "query": "Who owns intellectual property developed by Consultant during the engagement?",
+      "model_answer": "All Work Product and Deliverables are owned exclusively by Client from creation as work made for hire, with an irrevocable assignment fallback under Section 6.2.",
+      "human_verdict": "PASS",
+      "human_rationale": "Exact match to legal assignment mechanics in Section 6.2."
+    },
+    {
+      "id": "CASE-010",
+      "taxonomy_mode": "Ungrounded Defined Term / Reference Error",
+      "is_regression": false,
+      "contract_title": "Software Distribution Agreement",
+      "contract_context": "Section 2.1 Grant of License: Subject to the terms of this Agreement, Licensor grants Distributor a non-exclusive, non-transferable license to market and distribute the Software solely in the Territory (defined in Exhibit A as North America).",
+      "query": "Can Distributor grant sublicenses to European partners?",
+      "model_answer": "Yes, Distributor has full worldwide exclusive rights to sublicense the Software across Europe and Asia under Section 2.1.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Direct violation of Section 2.1: license is non-exclusive, non-transferable, and restricted solely to North America."
+    },
+    {
+      "id": "CASE-011",
+      "taxonomy_mode": "Missing Context / Ungrounded Generation",
+      "is_regression": false,
+      "contract_title": "Employment Non-Compete & Non-Solicit",
+      "contract_context": "Clause 4 Non-Solicitation of Employees: During employment and for twelve (12) months following termination, Employee shall not directly or indirectly solicit or recruit any current employee of Company to leave their employment.",
+      "query": "What is the duration of the non-solicitation restriction for employees?",
+      "model_answer": "The non-solicitation obligation applies during employment and continues for twelve (12) months after termination pursuant to Clause 4.",
+      "human_verdict": "PASS",
+      "human_rationale": "Directly quotes and adheres to the 12-month post-termination covenant in Clause 4."
+    },
+    {
+      "id": "CASE-012",
+      "taxonomy_mode": "Incorrect Technical Instructions / Substantive Error",
+      "is_regression": false,
+      "contract_title": "Cloud SLA & Service Credit Terms",
+      "contract_context": "Section 3.2 Service Level Credits: If Monthly Uptime Percentage falls below 99.9% but is at least 99.0%, Customer shall receive a 10% service credit. If uptime falls below 99.0%, Customer receives a 25% credit. Claims must be submitted within thirty (30) days of month end.",
+      "query": "What service credit is owed if availability is 99.4%, and how is it claimed?",
+      "model_answer": "If availability is 99.4%, Customer is entitled to a 10% service credit under Section 3.2, which must be claimed in writing within thirty (30) days of month end.",
+      "human_verdict": "PASS",
+      "human_rationale": "Properly mapped 99.4% to the 99.0%-99.9% tier (10% credit) and included the 30-day claim deadline."
+    },
+    {
+      "id": "CASE-013",
+      "taxonomy_mode": "Hallucination / Fact Distortion",
+      "is_regression": false,
+      "contract_title": "Commercial Lease Agreement",
+      "contract_context": "Section 8 Maintenance and Repairs: Tenant shall at its sole expense maintain the interior of the Leased Premises. Landlord shall be responsible for structural elements, roof, foundations, and exterior walls, provided Tenant provides prompt written notice of defects.",
+      "query": "Is Tenant responsible for roof replacement and structural foundation repairs?",
+      "model_answer": "Yes, Section 8 specifies that Tenant bears sole financial responsibility for all structural foundation and roof maintenance.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Reversed the obligation. Section 8 explicitly places structural elements and roof on Landlord, not Tenant."
+    },
+    {
+      "id": "CASE-014",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": false,
+      "contract_title": "Asset Purchase Agreement",
+      "contract_context": "Section 11.1 Survival of Representations: Fundamental representations (Title, Organization, Authority) shall survive closing indefinitely. All other representations and warranties of Seller shall survive for eighteen (18) months following the Closing Date.",
+      "query": "How long do standard operational representations survive after closing?",
+      "model_answer": "All representations without exception expire immediately upon closing and cannot be sued upon.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Contradicts Section 11.1: General representations survive for 18 months, and fundamental reps survive indefinitely."
+    },
+    {
+      "id": "CASE-015",
+      "taxonomy_mode": "Ungrounded Defined Term / Reference Error",
+      "is_regression": false,
+      "contract_title": "Subcontractor Framework Agreement",
+      "contract_context": "Section 7 Insurance Requirements: Subcontractor shall maintain Commercial General Liability insurance with limits of not less than $2,000,000 per occurrence and $4,000,000 aggregate, naming Contractor as an Additional Insured.",
+      "query": "What are the required insurance limits and endorsements for Subcontractor?",
+      "model_answer": "Subcontractor must maintain Commercial General Liability insurance of at least $2,000,000 per occurrence and $4,000,000 aggregate, with Contractor endorsed as Additional Insured per Section 7.",
+      "human_verdict": "PASS",
+      "human_rationale": "Accurate extraction of policy amounts and Additional Insured endorsement."
+    },
+    {
+      "id": "CASE-016",
+      "taxonomy_mode": "Missing Context / Ungrounded Generation",
+      "is_regression": false,
+      "contract_title": "Channel Reseller Agreement",
+      "contract_context": "Section 10 Audit Rights: Upon thirty (30) days advance written notice, Company may inspect Reseller's relevant sales records during normal business hours once per calendar year.",
+      "query": "Can Company conduct unannounced surprise audits of Reseller's premises at any time?",
+      "model_answer": "Yes, Company reserves the right to conduct surprise, unannounced physical audits 24/7 without notice.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Contradicts Section 10 notice requirement (30 days advance written notice during business hours, max once per year)."
+    },
+    {
+      "id": "CASE-017",
+      "taxonomy_mode": "Incorrect Technical Instructions / Substantive Error",
+      "is_regression": false,
+      "contract_title": "Executive Employment Agreement",
+      "contract_context": "Section 5.3 Severance Benefits: Upon termination without Cause or resignation for Good Reason, Executive is entitled to twelve (12) months base salary continuation and twelve (12) months COBRA premium reimbursement, contingent on signing a general release of claims.",
+      "query": "What severance is Executive entitled to if terminated for Cause?",
+      "model_answer": "If terminated for Cause, Executive is not entitled to salary continuation or COBRA severance under Section 5.3 (severance requires termination without Cause or Good Reason resignation).",
+      "human_verdict": "PASS",
+      "human_rationale": "Correctly reasons from the conditional trigger in Section 5.3 that termination for Cause forfeits severance benefits."
+    },
+    {
+      "id": "CASE-018",
+      "taxonomy_mode": "Hallucination / Fact Distortion",
+      "is_regression": false,
+      "contract_title": "Joint Development Agreement",
+      "contract_context": "Section 4.3 Background IP: Each party shall retain sole ownership of all Background Intellectual Property owned or controlled by such party prior to the Effective Date or developed independently outside the Scope of Work.",
+      "query": "Does Party A surrender ownership of its pre-existing patents when entering this agreement?",
+      "model_answer": "No, each party retains sole ownership of its Background IP developed prior to the Effective Date or independently outside the project per Section 4.3.",
+      "human_verdict": "PASS",
+      "human_rationale": "Clear and faithful restatement of Background IP preservation in Section 4.3."
+    },
+    {
+      "id": "CASE-019",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": false,
+      "contract_title": "Supply Chain Master Agreement",
+      "contract_context": "Section 16 Force Majeure: Neither party shall be liable for delay caused by acts of God, war, terrorism, or governmental embargoes. Financial hardship, lack of funds, or supplier price increases shall expressly NOT constitute Force Majeure events.",
+      "query": "Can Supplier invoke Force Majeure to cancel deliveries if raw material prices increase by 40%?",
+      "model_answer": "Yes, unforeseen 40% material price increases constitute a valid Force Majeure condition excusing performance.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Direct legal violation of Section 16 carve-out, which expressly states that price increases do NOT constitute Force Majeure."
+    },
+    {
+      "id": "CASE-020",
+      "taxonomy_mode": "Ungrounded Defined Term / Reference Error",
+      "is_regression": false,
+      "contract_title": "Software License Agreement",
+      "contract_context": "Section 1.4 Defined Terms: 'Authorized User' means an employee or contractor of Licensee who is authorized by Licensee to access the Software solely for Licensee's internal business operations.",
+      "query": "Who qualifies as an Authorized User under Section 1.4?",
+      "model_answer": "Under Section 1.4, an 'Authorized User' is an employee or contractor authorized by Licensee to use the Software solely for internal business operations.",
+      "human_verdict": "PASS",
+      "human_rationale": "Exact definition match without hallucination or distortion."
+    },
+    {
+      "id": "CASE-021",
+      "taxonomy_mode": "Missing Context / Ungrounded Generation",
+      "is_regression": false,
+      "contract_title": "Confidentiality & Non-Disclosure Agreement",
+      "contract_context": "Section 5 Return or Destruction: Within fourteen (14) days of written request, Receiving Party shall return or destroy all tangible materials containing Confidential Information and certify compliance in writing.",
+      "query": "What is the timeline for returning or destroying confidential materials?",
+      "model_answer": "Receiving Party must return or destroy all confidential materials within fourteen (14) days of written request and provide written certification per Section 5.",
+      "human_verdict": "PASS",
+      "human_rationale": "Direct quote of 14-day timeline and written certification requirement in Section 5."
+    },
+    {
+      "id": "CASE-022",
+      "taxonomy_mode": "Incorrect Technical Instructions / Substantive Error",
+      "is_regression": false,
+      "contract_title": "Master Services Agreement - Subcontracting",
+      "contract_context": "Section 13.1 Subcontracting: Provider shall not subcontract any portion of the Services without Customer's prior written consent. Provider remains fully responsible for all acts and omissions of its approved subcontractors.",
+      "query": "Can Provider hire subcontractors freely without notifying Customer?",
+      "model_answer": "Provider may hire any subcontractors freely without notice so long as they sign a standard NDA.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Contradicts Section 13.1 requirement for prior written consent from Customer."
+    },
+    {
+      "id": "CASE-023",
+      "taxonomy_mode": "Hallucination / Fact Distortion",
+      "is_regression": false,
+      "contract_title": "Software Maintenance Agreement",
+      "contract_context": "Section 6 Warranty Disclaimer: EXCEPT AS EXPRESSLY PROVIDED HEREIN, THE SOFTWARE IS PROVIDED 'AS IS' WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.",
+      "query": "Does the contract provide an implied warranty of fitness for a particular purpose?",
+      "model_answer": "No, Section 6 contains an express disclaimer of all implied warranties, including merchantability and fitness for a particular purpose.",
+      "human_verdict": "PASS",
+      "human_rationale": "Accurate explanation of standard UCC warranty disclaimer in Section 6."
+    },
+    {
+      "id": "CASE-024",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": false,
+      "contract_title": "Exclusive Marketing Rights Agreement",
+      "contract_context": "Section 3 Minimum Marketing Commitment: Partner agrees to spend a minimum of $50,000 per quarter on targeted advertising campaigns. Failure to meet the quarterly minimum for two consecutive quarters grants Company the right to terminate exclusivity upon thirty (30) days notice.",
+      "query": "What happens if Partner only spends $20,000 in Q1 and $30,000 in Q2?",
+      "model_answer": "Because Partner missed the $50,000 minimum for two consecutive quarters, Company may terminate Partner's exclusivity upon thirty (30) days notice pursuant to Section 3.",
+      "human_verdict": "PASS",
+      "human_rationale": "Accurately applies the two consecutive quarter threshold and 30-day notice remedy from Section 3."
+    },
+    {
+      "id": "CASE-025",
+      "taxonomy_mode": "Ungrounded Defined Term / Reference Error",
+      "is_regression": false,
+      "contract_title": "Corporate Debt Facility Agreement",
+      "contract_context": "Section 8.1 Events of Default: An Event of Default occurs if Borrower fails to pay any principal within five (5) business days of the due date, or breaches any financial covenant in Section 7 and fails to cure within thirty (30) days.",
+      "query": "What grace period is allowed for late principal payments before an Event of Default occurs?",
+      "model_answer": "Borrower is allowed a grace period of five (5) business days after the due date before an Event of Default is triggered under Section 8.1.",
+      "human_verdict": "PASS",
+      "human_rationale": "Accurately cites Section 8.1 and the 5 business day grace period for principal."
+    },
+    {
+      "id": "CASE-026",
+      "taxonomy_mode": "Missing Context / Ungrounded Generation",
+      "is_regression": false,
+      "contract_title": "International Licensing Agreement",
+      "contract_context": "Section 15 Dispute Resolution: Any dispute not resolved by negotiation within sixty (60) days shall be settled by binding arbitration administered by the International Chamber of Commerce (ICC) in London in the English language.",
+      "query": "Where is arbitration held, and which arbitration rules govern?",
+      "model_answer": "Disputes are arbitrated under the American Arbitration Association (AAA) rules in Singapore in the French language.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Complete fabrication of forum, institution, and language. Section 15 requires ICC in London in English."
+    }
+  ]
+}
