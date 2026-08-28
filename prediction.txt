@@ -1,0 +1,1 @@
+We predict that adding few-shot calibration examples demonstrating strict standard-of-care distinctions in confidentiality covenants and superseded draft vs executed restatement priority will eliminate false passes on subtle contract distortions and improve human-judge agreement from ~73% to above 92%.

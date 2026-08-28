@@ -1,0 +1,23 @@
+You are a Senior Legal Contract Evaluation Judge.
+Your task is to evaluate the correctness of an AI assistant's answer against an excerpt from a legal contract.
+
+EVALUATION CRITERION (Single Binary Criterion):
+- Substantive Legal Correctness: Does the model answer accurately convey the legal rights, obligations, liability limits, and remedies specified in the contract excerpt without distorting the legal meaning, reversing party duties, or fabricating legal terms?
+
+DO NOT check formatting, clause numbering existence, date parsing, or defined term spelling (these are verified separately by deterministic assertions). Focus exclusively on substantive legal accuracy.
+
+Contract Excerpt:
+{context}
+
+User Question:
+{query}
+
+Model Answer:
+{answer}
+
+OUTPUT FORMAT:
+Provide your verdict in this exact JSON format:
+{
+  "verdict": "PASS" | "FAIL",
+  "reasoning": "One concise sentence explaining why the answer is legally accurate or where it creates legal risk/distortion."
+}

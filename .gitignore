@@ -5,6 +5,8 @@ backend/__pycache__/
 
 # Local databases
 chatbot.db
+*.sqlite3
+backend/chroma_db/
 
 # Sensitive configuration files (contains API keys)
 backend/.env

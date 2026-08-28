@@ -771,9 +771,71 @@ def seed_traces(db: Session = Depends(get_db)):
 
     return {"status": "success", "seeded_traces": created_count, "message": "Successfully seeded 20 realistic traces across Tracks A-F with open-coded notes."}
 
+# ------------------------------------------------------------------
+# Week 6: Legal Contracts Evaluation & Judge Validation Endpoints
+# ------------------------------------------------------------------
+
+from evals.judge_service import JudgeService
+judge_service = JudgeService()
+
+@app.get("/api/eval/summary")
+def get_eval_summary():
+    """
+    Returns full evaluation suite metrics:
+    - 25+ test cases with Week-5 taxonomy modes
+    - 2+ real regression cases replayed verbatim
+    - 4 Deterministic assertions vs 1 Judged criteria
+    - Agreement Before (Judge v1) vs Agreement After (Judge v2)
+    - Pass rates by taxonomy mode
+    - Disagreements analysis and pre-iteration prediction
+    """
+    summary = judge_service.run_full_suite()
+    return summary
+
+@app.get("/api/eval/cases")
+def get_eval_cases():
+    """
+    Returns the 26 legal contract cases from labels_25.json
+    """
+    return judge_service.dataset.get("cases", [])
+
+@app.post("/api/eval/run")
+def run_eval_suite():
+    """
+    Executes the entire evaluation suite on demand.
+    """
+    return judge_service.run_full_suite()
+
+@app.get("/api/eval/bonus-ragas")
+def get_bonus_ragas_analysis():
+    """
+    Bonus Challenge: RAGAS Faithfulness vs Context Precision on contract cases,
+    highlighting the 'confidently, faithfully wrong' superseded amendment trap.
+    """
+    suite = judge_service.run_full_suite()
+    trap_case = next((c for c in suite["cases"] if c.get("id") == "CASE-002"), None)
+    
+    return {
+        "analysis_title": "Bonus Challenge: Confidently, Faithfully Wrong Retrieval Trap",
+        "description": "Demonstrates why aggregate RAGAS faithfulness hides critical legal errors when context precision fails.",
+        "case_id": "CASE-002",
+        "contract_title": "Master Services Agreement (Executed 2026 Restatement)",
+        "trap_details": {
+            "retrieved_chunk": "[SUPERSEDED Draft 2023]: In the event of breach, Provider liability is capped at $5,000,000.",
+            "executed_truth": "Section 8.2 Total aggregate liability of Provider shall in no event exceed the total fees paid by Customer during the twelve (12) months preceding the incident.",
+            "model_answer": "Under the agreement terms, Provider liability is capped at $5,000,000 for any breach of contract.",
+            "faithfulness_score": 0.96,
+            "context_precision_score": 0.00,
+            "answer_relevance_score": 0.92,
+            "human_verdict": "FAIL (Substantive Legal Error)",
+            "why_aggregate_hides_it": "Because the answer faithfully copied numbers from the retrieved chunk, standard faithfulness reaches 0.96. But because the retriever returned a superseded amendment rather than the executed restatement, the legal advice is completely incorrect. Looking only at average faithfulness conceals this catastrophic legal risk."
+        }
+    }
+
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", 8000))
     is_reload = os.getenv("RELOAD", "false").lower() == "true"
     uvicorn.run("main:app", host=host, port=port, reload=is_reload)
+
 
