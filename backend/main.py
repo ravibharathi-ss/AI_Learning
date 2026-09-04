@@ -832,10 +832,70 @@ def get_bonus_ragas_analysis():
         }
     }
 
+# ------------------------------------------------------------------
+# Week 7: Agent Loops & Fixed Workflow Race Endpoints
+# ------------------------------------------------------------------
+
+from services.agent_service import AgentService
+agent_service = AgentService(ollama_service=ollama_service)
+
+@app.get("/api/agent/tracks")
+def get_agent_tracks():
+    """
+    Returns available domain tracks (A-F) with metadata, tools, and default queries.
+    """
+    return agent_service.tracks
+
+@app.post("/api/agent/run", response_model=schemas.AgentRunResponse)
+def run_agent_loop(payload: schemas.AgentRunRequest):
+    """
+    Executes hand-built transparent ReAct agent loop with step-by-step logging & budget limits.
+    """
+    res = agent_service.run_agent(
+        query=payload.query,
+        track_code=payload.track_code,
+        max_steps=payload.max_steps,
+        token_budget=payload.token_budget,
+        latency_budget_ms=payload.latency_budget_ms,
+        memory_mode=payload.memory_mode
+    )
+    return res
+
+@app.post("/api/agent/fixed-workflow", response_model=schemas.FixedWorkflowRunResponse)
+def run_fixed_workflow(payload: schemas.RaceCompareRequest):
+    """
+    Executes plain fixed sequence workflow pipeline without LLM decision loop overhead.
+    """
+    res = agent_service.run_fixed_workflow(
+        query=payload.query,
+        track_code=payload.track_code
+    )
+    return res
+
+@app.post("/api/agent/race", response_model=schemas.RaceCompareResponse)
+def race_agent_vs_fixed(payload: schemas.RaceCompareRequest):
+    """
+    Races Agent vs Fixed Workflow on a single query and compares Speed, Cost, & Reliability.
+    """
+    res = agent_service.race_agent_vs_fixed(
+        query=payload.query,
+        track_code=payload.track_code
+    )
+    return res
+
+@app.get("/api/agent/race-suite", response_model=schemas.BenchmarkSuiteResponse)
+def run_agent_race_suite():
+    """
+    Executes full benchmark race suite across all 6 tracks (A-F) with aggregate comparison summary.
+    """
+    res = agent_service.run_benchmark_suite()
+    return res
+
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", 8000))
     is_reload = os.getenv("RELOAD", "false").lower() == "true"
     uvicorn.run("main:app", host=host, port=port, reload=is_reload)
+
 
 

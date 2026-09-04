@@ -32,7 +32,14 @@ import {
   ShieldCheck,
   FileCheck,
   TrendingUp,
-  GitCommit
+  GitCommit,
+  Zap,
+  Clock,
+  DollarSign,
+  Activity,
+  Play,
+  Sliders,
+  Cpu
 } from 'lucide-react';
 
 interface Feedback {
@@ -102,7 +109,7 @@ export default function App() {
   };
 
   // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -131,6 +138,107 @@ export default function App() {
   const [w6Filter, setW6Filter] = useState<'all' | 'disagreements' | 'regressions' | 'pass' | 'fail'>('all');
   const [selectedEvalCase, setSelectedEvalCase] = useState<any | null>(null);
   const [bonusRagasData, setBonusRagasData] = useState<any | null>(null);
+
+  // Week 7 Agent Loops & Fixed Workflow Race State
+  const [w7TrackCode, setW7TrackCode] = useState<'A' | 'B' | 'C' | 'D' | 'E' | 'F'>('A');
+  const [w7Query, setW7Query] = useState('My order #90214 custom headset is damaged and I want a full refund.');
+  const [w7MaxSteps, setW7MaxSteps] = useState(5);
+  const [w7TokenBudget, setW7TokenBudget] = useState(2000);
+  const [w7MemoryMode, setW7MemoryMode] = useState<'short_term' | 'summarized'>('short_term');
+  const [w7SubTab, setW7SubTab] = useState<'race' | 'inspector' | 'suite' | 'decision'>('race');
+  const [w7RaceData, setW7RaceData] = useState<any | null>(null);
+  const [w7AgentData, setW7AgentData] = useState<any | null>(null);
+  const [w7SuiteData, setW7SuiteData] = useState<any | null>(null);
+  const [isW7Running, setIsW7Running] = useState(false);
+  const [tracksMetadata, setTracksMetadata] = useState<any | null>(null);
+
+  const defaultQueries: Record<string, string> = {
+    A: 'My order #90214 custom headset is damaged and I want a full refund.',
+    B: 'Can I substitute almond flour 1:1 for all-purpose flour in sourdough bread for 6 people?',
+    C: 'How many days of paid parental leave am I entitled to as a full-time employee with 2 years tenure?',
+    D: 'I have comprehensive auto coverage and need a windshield chip repair. Will my $500 deductible apply?',
+    E: 'I am getting error ERR-4032 when calling the /v2/deployments endpoint in Python.',
+    F: 'What is the governing law and aggregate liability cap for Provider under our Master Services Agreement?'
+  };
+
+  const handleTrackChange = (code: 'A' | 'B' | 'C' | 'D' | 'E' | 'F') => {
+    setW7TrackCode(code);
+    setW7Query(defaultQueries[code] || '');
+  };
+
+  const fetchTracksMetadata = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/agent/tracks`);
+      if (res.ok) {
+        const data = await res.json();
+        setTracksMetadata(data);
+      }
+    } catch (e) {
+      console.error("Error fetching tracks metadata:", e);
+    }
+  };
+
+  const handleRunW7Race = async (overrideTrack?: string, overrideQuery?: string) => {
+    setIsW7Running(true);
+    try {
+      const tCode = overrideTrack || w7TrackCode;
+      const q = overrideQuery || w7Query;
+      const res = await fetch(`${API_BASE}/agent/race`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, track_code: tCode })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setW7RaceData(data);
+        setW7AgentData(data.agent_result);
+      }
+    } catch (e) {
+      console.error("Error running agent vs fixed race:", e);
+    } finally {
+      setIsW7Running(false);
+    }
+  };
+
+  const handleRunW7Agent = async () => {
+    setIsW7Running(true);
+    try {
+      const res = await fetch(`${API_BASE}/agent/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: w7Query,
+          track_code: w7TrackCode,
+          max_steps: w7MaxSteps,
+          token_budget: w7TokenBudget,
+          memory_mode: w7MemoryMode
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setW7AgentData(data);
+      }
+    } catch (e) {
+      console.error("Error running agent loop:", e);
+    } finally {
+      setIsW7Running(false);
+    }
+  };
+
+  const handleRunW7Suite = async () => {
+    setIsW7Running(true);
+    try {
+      const res = await fetch(`${API_BASE}/agent/race-suite`);
+      if (res.ok) {
+        const data = await res.json();
+        setW7SuiteData(data);
+      }
+    } catch (e) {
+      console.error("Error running agent race suite:", e);
+    } finally {
+      setIsW7Running(false);
+    }
+  };
 
   const fetchEvalSummary = async () => {
     setIsFetchingEval(true);
@@ -984,6 +1092,17 @@ export default function App() {
             >
               <Scale size={13} />
               <span>W6 Judge</span>
+            </button>
+            <button
+              onClick={() => {
+                setCurrentView('agent_loops');
+                fetchTracksMetadata();
+                if (!w7RaceData) handleRunW7Race();
+              }}
+              className={`sidebar-nav-tab ${currentView === 'agent_loops' ? 'active-agent' : ''}`}
+            >
+              <Zap size={13} />
+              <span>W7 Agents</span>
             </button>
           </div>
         </div>
@@ -2628,6 +2747,524 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                           "If an evaluation suite scores 0.94 aggregate faithfulness across 25 contract queries, leadership assumes the system is trustworthy. However, that high average happily hides Case CASE-002, where the AI gave a completely incorrect $5,000,000 liability advice because it retrieved a superseded draft rather than the executed restatement. The answer was 100% faithful to the wrong chunk. Without combining deterministic assertions, context precision, and human-calibrated LLM judges, RAG systems create severe legal liabilities."
                         )}
                       </p>
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
+            ) : currentView === 'agent_loops' ? (
+              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+                
+                {/* 1. MODULE TITLE & DASHBOARD HEADER */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(168, 85, 247, 0.08) 100%)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '16px', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ background: '#EAB308', color: '#000000', fontSize: '11px', fontWeight: '900', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
+                        Week 7 · Module 4
+                      </span>
+                      <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: '#FFFFFF' }}>
+                        Agent Loops — and When Not to Use Them
+                      </h2>
+                    </div>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#CBD5E1', maxWidth: '750px' }}>
+                      Build an AI agent that operates in a transparent ReAct loop (Plan → Act → Observe) with safety budgets and memory — and race it against a plain fixed sequence workflow on <strong>Speed</strong>, <strong>Cost</strong>, and <strong>Reliability</strong> across Tracks A–F.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => handleRunW7Race()}
+                      disabled={isW7Running}
+                      className="btn-3d btn-3d-primary"
+                      style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(180deg, #EAB308 0%, #CA8A04 100%)', color: '#000000', borderColor: '#EAB308' }}
+                    >
+                      <Zap size={16} />
+                      {isW7Running ? 'Running Race...' : 'Race Agent vs Fixed'}
+                    </button>
+                    <button
+                      onClick={() => handleRunW7Suite()}
+                      disabled={isW7Running}
+                      className="btn-3d btn-3d-secondary"
+                      style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    >
+                      <Activity size={16} />
+                      Run Full Suite
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. TRACK SELECTOR & CONFIGURATION BAR */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  
+                  {/* Track Pills (A-F) */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', marginRight: '4px' }}>Select Track:</span>
+                    {[
+                      { code: 'A', name: 'Support', full: 'Customer Support Tickets' },
+                      { code: 'B', name: 'Recipes', full: 'Recipes & Food' },
+                      { code: 'C', name: 'HR Policy', full: 'HR Policy Benefits' },
+                      { code: 'D', name: 'Insurance', full: 'Insurance Claims' },
+                      { code: 'E', name: 'Dev Docs', full: 'Developer Documentation' },
+                      { code: 'F', name: 'Legal', full: 'Legal Contracts' }
+                    ].map(t => (
+                      <button
+                        key={t.code}
+                        onClick={() => handleTrackChange(t.code as any)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '10px',
+                          fontSize: '12px',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          border: w7TrackCode === t.code ? '1px solid #EAB308' : '1px solid rgba(255,255,255,0.1)',
+                          background: w7TrackCode === t.code ? 'rgba(234, 179, 8, 0.15)' : 'rgba(255,255,255,0.03)',
+                          color: w7TrackCode === t.code ? '#EAB308' : '#CBD5E1',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        Track {t.code}: {t.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Query & Budget Settings Row */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#94A3B8', marginBottom: '6px' }}>
+                        Track {w7TrackCode} Input Scenario Query:
+                      </label>
+                      <input
+                        type="text"
+                        value={w7Query}
+                        onChange={(e) => setW7Query(e.target.value)}
+                        style={{ width: '100%', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '10px 14px', color: '#FFFFFF', fontSize: '13px' }}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94A3B8', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Safety Max Steps:</span>
+                        <span style={{ color: '#EAB308' }}>{w7MaxSteps} steps</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={w7MaxSteps}
+                        onChange={(e) => setW7MaxSteps(parseInt(e.target.value))}
+                        style={{ width: '100%', accentColor: '#EAB308' }}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94A3B8', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Token Budget Cap:</span>
+                        <span style={{ color: '#EAB308' }}>{w7TokenBudget} tokens</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="500"
+                        max="5000"
+                        step="250"
+                        value={w7TokenBudget}
+                        onChange={(e) => setW7TokenBudget(parseInt(e.target.value))}
+                        style={{ width: '100%', accentColor: '#EAB308' }}
+                      />
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* 3. SUB-TAB NAVIGATION BAR */}
+                <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '12px' }}>
+                  {[
+                    { key: 'race', label: '⚡ Live Race Arena', icon: <Zap size={14} /> },
+                    { key: 'inspector', label: '🔍 Agent Step Inspector', icon: <Sliders size={14} /> },
+                    { key: 'suite', label: '📊 Benchmark Race Suite', icon: <Activity size={14} /> },
+                    { key: 'decision', label: '📐 Decision Framework', icon: <Cpu size={14} /> }
+                  ].map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setW7SubTab(tab.key as any)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '10px',
+                        fontSize: '13px',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        border: 'none',
+                        background: w7SubTab === tab.key ? 'rgba(234, 179, 8, 0.15)' : 'transparent',
+                        color: w7SubTab === tab.key ? '#EAB308' : '#94A3B8',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {tab.icon}
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 4. SUB-TAB 1: LIVE RACE ARENA */}
+                {w7SubTab === 'race' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    {/* Race Winner Banner */}
+                    {w7RaceData && (
+                      <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ background: '#10B981', color: '#000000', borderRadius: '12px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CheckCircle2 size={24} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '900', color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Race Winner</span>
+                            <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
+                              {w7RaceData.race_winner}
+                            </span>
+                          </div>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#FFFFFF', fontWeight: '500', lineHeight: '1.5' }}>
+                            {w7RaceData.ship_recommendation}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Metrics Comparison Cards (Speed, Cost, Reliability) */}
+                    {w7RaceData && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                        
+                        {/* Speed Metric Card */}
+                        <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                            <Clock size={16} style={{ color: '#38BDF8' }} />
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>SPEED (LATENCY)</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                            <div>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Agent Loop</span>
+                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#EF4444' }}>{w7RaceData.agent_result.total_latency_ms}ms</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Fixed Workflow</span>
+                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#10B981' }}>{w7RaceData.fixed_result.total_latency_ms}ms</span>
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38BDF8', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', textAlign: 'center' }}>
+                            ⚡ Fixed is {w7RaceData.metrics_comparison.latency.speedup_multiplier}x Faster ({w7RaceData.metrics_comparison.latency.fixed_savings_pct}% faster)
+                          </div>
+                        </div>
+
+                        {/* Cost Metric Card */}
+                        <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                            <DollarSign size={16} style={{ color: '#EAB308' }} />
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>COST ($ / TOKENS)</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                            <div>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Agent ({w7RaceData.agent_result.total_tokens} tk)</span>
+                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#EF4444' }}>${w7RaceData.agent_result.cost_dollars}</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Fixed ({w7RaceData.fixed_result.total_tokens} tk)</span>
+                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#10B981' }}>${w7RaceData.fixed_result.cost_dollars}</span>
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(234, 179, 8, 0.1)', color: '#EAB308', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', textAlign: 'center' }}>
+                            💰 Fixed is {w7RaceData.metrics_comparison.cost.fixed_savings_pct}% Cheaper
+                          </div>
+                        </div>
+
+                        {/* Reliability Metric Card */}
+                        <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                            <ShieldCheck size={16} style={{ color: '#10B981' }} />
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>RELIABILITY (%)</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                            <div>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Agent Accuracy</span>
+                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#38BDF8' }}>{w7RaceData.agent_result.reliability_score_pct}%</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Fixed Accuracy</span>
+                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#10B981' }}>{w7RaceData.fixed_result.reliability_score_pct}%</span>
+                            </div>
+                          </div>
+                          <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', textAlign: 'center' }}>
+                            🎯 Fixed is 100% Deterministic & Reliable
+                          </div>
+                        </div>
+
+                      </div>
+                    )}
+
+                    {/* Side-by-Side Execution Trace */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      
+                      {/* Left: Agent Execution Loop */}
+                      <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#A855F7' }}>Hand-Built ReAct Agent Loop</h3>
+                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>Dynamic LLM Tool Selection & Reasoning Loop</span>
+                          </div>
+                          <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#A855F7', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                            {w7AgentData?.total_steps ?? 0} Steps
+                          </span>
+                        </div>
+
+                        {w7AgentData ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {w7AgentData.steps.map((st: any) => (
+                              <div key={st.step_index} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                  <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#A855F7' }}>Step {st.step_index}: {st.action_tool}</span>
+                                  <span style={{ fontSize: '10px', color: '#64748B' }}>{st.latency_ms}ms | {st.tokens_used} tk</span>
+                                </div>
+                                <p style={{ margin: '0 0 6px 0', fontSize: '12px', color: '#CBD5E1', fontStyle: 'italic' }}>"{st.thought}"</p>
+                                <div style={{ background: 'rgba(16, 185, 129, 0.08)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', color: '#10B981', fontFamily: 'monospace' }}>
+                                  {st.observation}
+                                </div>
+                              </div>
+                            ))}
+                            <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '12px', borderRadius: '10px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#EAB308', display: 'block', marginBottom: '4px' }}>Final Agent Answer:</span>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>{w7AgentData.final_answer}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '40px', color: '#64748B', fontSize: '13px' }}>Click 'Race Agent vs Fixed' to run.</div>
+                        )}
+                      </div>
+
+                      {/* Right: Fixed Sequence Workflow */}
+                      <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#10B981' }}>Plain Fixed Sequence Workflow</h3>
+                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>Deterministic 3-Step Pipeline (Zero Loop Overhead)</span>
+                          </div>
+                          <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
+                            Single Pass
+                          </span>
+                        </div>
+
+                        {w7RaceData?.fixed_result ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {w7RaceData.fixed_result.steps.map((st: any) => (
+                              <div key={st.step_index} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', display: 'block', marginBottom: '4px' }}>{st.action}</span>
+                                <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', color: '#38BDF8', fontFamily: 'monospace' }}>
+                                  {st.output}
+                                </div>
+                              </div>
+                            ))}
+                            <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '12px', borderRadius: '10px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', display: 'block', marginBottom: '4px' }}>Fixed Workflow Final Output:</span>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>{w7RaceData.fixed_result.final_answer}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '40px', color: '#64748B', fontSize: '13px' }}>Click 'Race Agent vs Fixed' to run.</div>
+                        )}
+                      </div>
+
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 5. SUB-TAB 2: AGENT STEP INSPECTOR */}
+                {w7SubTab === 'inspector' && w7AgentData && (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Hand-Built Agent Step Inspector & Safety Budgets</h3>
+                      <span style={{ fontSize: '12px', color: '#94A3B8' }}>Inspect every turn of the ~50-line ReAct loop, token accumulation, and memory mode</span>
+                    </div>
+
+                    {/* Budget & Memory Status Banner */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Step Budget Usage</span>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#EAB308', margin: '4px 0' }}>
+                          {w7AgentData.total_steps} / {w7MaxSteps} Max Steps
+                        </div>
+                        <div style={{ width: '100%', background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px' }}>
+                          <div style={{ width: `${Math.min(100, (w7AgentData.total_steps / w7MaxSteps) * 100)}%`, background: '#EAB308', height: '100%', borderRadius: '3px' }}></div>
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Token Budget Usage</span>
+                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#38BDF8', margin: '4px 0' }}>
+                          {w7AgentData.total_tokens} / {w7TokenBudget} Tokens
+                        </div>
+                        <div style={{ width: '100%', background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px' }}>
+                          <div style={{ width: `${Math.min(100, (w7AgentData.total_tokens / w7TokenBudget) * 100)}%`, background: '#38BDF8', height: '100%', borderRadius: '3px' }}></div>
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Agent Memory Mode</span>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#A855F7', margin: '4px 0' }}>
+                          {w7AgentData.memory_summary}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step Trajectory Log Cards */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      {w7AgentData.steps.map((st: any) => (
+                        <div key={st.step_index} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(168,85,247,0.2)', borderRadius: '12px', padding: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ background: '#A855F7', color: '#000000', fontSize: '11px', fontWeight: '900', padding: '2px 6px', borderRadius: '4px' }}>STEP {st.step_index}</span>
+                              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#FFFFFF' }}>Action Tool: {st.action_tool}</span>
+                            </div>
+                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>{st.timestamp} | {st.latency_ms}ms | {st.tokens_used} tokens</span>
+                          </div>
+                          
+                          <div style={{ marginBottom: '8px' }}>
+                            <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 'bold', display: 'block' }}>ReAct Thought & Plan:</span>
+                            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#CBD5E1' }}>{st.thought}</p>
+                          </div>
+
+                          <div>
+                            <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold', display: 'block' }}>Tool Observation:</span>
+                            <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', color: '#10B981', fontFamily: 'monospace', marginTop: '2px' }}>
+                              {st.observation}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                  </div>
+                )}
+
+                {/* 6. SUB-TAB 3: BENCHMARK RACE SUITE */}
+                {w7SubTab === 'suite' && (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Benchmark Race Suite (Tracks A–F)</h3>
+                        <span style={{ fontSize: '12px', color: '#94A3B8' }}>Comprehensive Head-to-Head Comparison Across All 6 Domains</span>
+                      </div>
+                      <button
+                        onClick={() => handleRunW7Suite()}
+                        disabled={isW7Running}
+                        className="btn-3d btn-3d-primary"
+                        style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px' }}
+                      >
+                        {isW7Running ? 'Running Suite...' : 'Execute Suite Now'}
+                      </button>
+                    </div>
+
+                    {w7SuiteData && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        
+                        {/* Summary metrics */}
+                        <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontSize: '11px', color: '#EAB308', fontWeight: 'bold', textTransform: 'uppercase' }}>Aggregate Suite Verdict</span>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#FFFFFF', fontWeight: '500' }}>
+                              {w7SuiteData.aggregate_summary.overall_verdict}
+                            </p>
+                          </div>
+                          <div style={{ display: 'flex', gap: '16px', textAlign: 'right' }}>
+                            <div>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Avg Fixed Speedup</span>
+                              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#10B981' }}>{w7SuiteData.aggregate_summary.avg_fixed_speedup}</span>
+                            </div>
+                            <div>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Avg Cost Savings</span>
+                              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#EAB308' }}>{w7SuiteData.aggregate_summary.avg_fixed_cost_savings}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Benchmark Table */}
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#CBD5E1' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(255, 255, 255, 0.05)', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                <th style={{ padding: '10px' }}>Track</th>
+                                <th style={{ padding: '10px' }}>Domain Topic</th>
+                                <th style={{ padding: '10px' }}>Agent Time</th>
+                                <th style={{ padding: '10px' }}>Fixed Time</th>
+                                <th style={{ padding: '10px' }}>Speedup</th>
+                                <th style={{ padding: '10px' }}>Fixed Savings</th>
+                                <th style={{ padding: '10px' }}>Race Winner</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {w7SuiteData.results.map((res: any) => (
+                                <tr key={res.track_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#EAB308' }}>Track {res.track_code}</td>
+                                  <td style={{ padding: '10px' }}>{res.track_name}</td>
+                                  <td style={{ padding: '10px', color: '#EF4444' }}>{res.agent_result.total_latency_ms}ms</td>
+                                  <td style={{ padding: '10px', color: '#10B981', fontWeight: 'bold' }}>{res.fixed_result.total_latency_ms}ms</td>
+                                  <td style={{ padding: '10px', color: '#38BDF8', fontWeight: 'bold' }}>{res.metrics_comparison.latency.speedup_multiplier}x faster</td>
+                                  <td style={{ padding: '10px', color: '#10B981', fontWeight: 'bold' }}>{res.metrics_comparison.cost.fixed_savings_pct}% cheaper</td>
+                                  <td style={{ padding: '10px' }}>
+                                    <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
+                                      {res.race_winner}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                      </div>
+                    )}
+
+                  </div>
+                )}
+
+                {/* 7. SUB-TAB 4: DECISION FRAMEWORK & TRADE-OFF GUIDE */}
+                {w7SubTab === 'decision' && (
+                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    <div>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Architectural Decision Framework: Agent vs Fixed Sequence</h3>
+                      <span style={{ fontSize: '12px', color: '#94A3B8' }}>When to use an AI agent loop — and why fixed sequence workflows win for structured business tasks</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      
+                      {/* Fixed Sequence Advantages */}
+                      <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '12px', padding: '18px' }}>
+                        <h4 style={{ margin: '0 0 10px 0', color: '#10B981', fontSize: '15px' }}>✓ When Fixed Workflows Win (Use 80% of the time)</h4>
+                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.7' }}>
+                          <li><strong>Known Step Sequence:</strong> You already know the exact 3-4 steps needed (Retrieve → Rule Check → Compute → Format).</li>
+                          <li><strong>Strict Latency SLA:</strong> Completes in ~120ms (single LLM pass) vs 500ms+ multi-turn agent loops.</li>
+                          <li><strong>Cost Optimization:</strong> Uses 60-75% fewer tokens by eliminating intermediate reasoning turn loops.</li>
+                          <li><strong>100% Reliability:</strong> Zero risk of infinite loops, hallucinated tool calls, or budget exhaustion.</li>
+                        </ul>
+                      </div>
+
+                      {/* Agent Loop Advantages */}
+                      <div style={{ background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.2)', borderRadius: '12px', padding: '18px' }}>
+                        <h4 style={{ margin: '0 0 10px 0', color: '#A855F7', fontSize: '15px' }}>🤖 When Agent Loops Are Necessary</h4>
+                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.7' }}>
+                          <li><strong>Dynamic Input Paths:</strong> The sequence of steps depends entirely on what the previous tool returned.</li>
+                          <li><strong>Open-Ended Problem Solving:</strong> Coding debuggers, research agents, or complex multi-database investigative queries.</li>
+                          <li><strong>Variable Tool Selection:</strong> The agent chooses among 10+ candidate APIs dynamically based on user intent.</li>
+                        </ul>
+                      </div>
+
+                    </div>
+
+                    <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.6' }}>
+                      <span style={{ color: '#EAB308', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>💡 Module Takeaway:</span>
+                      "Building a ~50-line ReAct loop yourself ensures you understand every turn of the loop without magic frameworks hiding failure modes. Always test a plain fixed sequence first — if the path is predictable, ship the fixed workflow for speed, cost, and reliability."
                     </div>
 
                   </div>

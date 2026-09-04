@@ -171,3 +171,77 @@ class SetFixTargetRequest(BaseModel):
     category_name: str
     prediction: str
 
+# ------------------------------------------------------------------
+# Week 7: Agent Loops & Race Comparison Schemas
+# ------------------------------------------------------------------
+
+class AgentStepSchema(BaseModel):
+    step_index: int
+    thought: str
+    action_tool: str
+    tool_input: str
+    observation: str
+    latency_ms: int
+    tokens_used: int
+    timestamp: str
+
+class AgentRunRequest(BaseModel):
+    query: str
+    track_code: str = "A"
+    max_steps: int = 5
+    token_budget: int = 2000
+    latency_budget_ms: int = 5000
+    memory_mode: str = "short_term"
+
+class AgentRunResponse(BaseModel):
+    query: str
+    track_code: str
+    track_name: str
+    execution_mode: str
+    final_answer: str
+    steps: List[AgentStepSchema]
+    total_steps: int
+    total_latency_ms: int
+    total_tokens: int
+    cost_dollars: float
+    reliability_score_pct: float
+    stopped_by_budget: Optional[str] = None
+    memory_summary: str
+
+class FixedWorkflowRunResponse(BaseModel):
+    query: str
+    track_code: str
+    track_name: str
+    execution_mode: str
+    final_answer: str
+    steps: List[dict]
+    total_steps: int
+    total_latency_ms: int
+    total_tokens: int
+    cost_dollars: float
+    reliability_score_pct: float
+    stopped_by_budget: Optional[str] = None
+    pipeline_description: str
+
+class RaceCompareRequest(BaseModel):
+    query: str
+    track_code: str = "A"
+
+class RaceCompareResponse(BaseModel):
+    query: str
+    track_code: str
+    track_name: str
+    agent_result: AgentRunResponse
+    fixed_result: FixedWorkflowRunResponse
+    race_winner: str
+    metrics_comparison: dict
+    ship_recommendation: str
+    tradeoff_analysis: dict
+
+class BenchmarkSuiteResponse(BaseModel):
+    suite_name: str
+    tracks_tested: int
+    results: List[RaceCompareResponse]
+    aggregate_summary: dict
+
+

@@ -918,3 +918,11 @@ body {
   justify-content: center;
   gap: 10px;
 }
+
+/* Week 7 Active Agent Tab Styling */
+.sidebar-nav-tab.active-agent {
+  background: rgba(234, 179, 8, 0.15);
+  color: #EAB308;
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
