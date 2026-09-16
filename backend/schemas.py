@@ -245,3 +245,38 @@ class BenchmarkSuiteResponse(BaseModel):
     aggregate_summary: dict
 
 
+# ------------------------------------------------------------------
+# Week 9: MCP (Model Context Protocol), Multi-Agent & A2A Schemas
+# ------------------------------------------------------------------
+
+class MCPRegisterServerRequest(BaseModel):
+    name: str
+    track_code: Optional[str] = None
+    description: str = ""
+    transport_type: str = "http"  # 'in_process', 'stdio', 'http'
+    url_or_cmd: str = ""
+    custom_tools: Optional[List[dict]] = None
+
+class MCPServerResponse(BaseModel):
+    server_id: str
+    name: str
+    version: str
+    track_code: Optional[str] = None
+    description: str
+    transport_type: str
+    status: str
+    created_at: str
+
+class MCPToolCallRequest(BaseModel):
+    tool_name: str
+    arguments: dict = {}
+    server_id: Optional[str] = None
+
+class MCPAgentRunRequest(BaseModel):
+    query: str
+    track_code: str = "A"
+    include_second_server: bool = False
+    max_steps: int = 5
+
+
+

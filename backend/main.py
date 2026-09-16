@@ -891,6 +891,149 @@ def run_agent_race_suite():
     res = agent_service.run_benchmark_suite()
     return res
 
+# ------------------------------------------------------------------
+# Week 9: MCP (Model Context Protocol), Multi-Agent & A2A Endpoints
+# ------------------------------------------------------------------
+
+from services.mcp_service import MCPManager, MCPAgentRunner
+mcp_manager = MCPManager()
+mcp_agent_runner = MCPAgentRunner(mcp_manager=mcp_manager, ollama_service=ollama_service)
+
+@app.get("/api/mcp/servers")
+def get_mcp_servers():
+    """
+    Returns list of all active registered MCP Servers (Tracks A-F + custom).
+    """
+    res = []
+    for srv in mcp_manager.servers.values():
+        res.append({
+            "server_id": srv.server_id,
+            "name": srv.name,
+            "version": srv.version,
+            "track_code": srv.track_code,
+            "description": srv.description,
+            "transport_type": srv.transport_type,
+            "status": srv.status,
+            "created_at": srv.created_at,
+            "tools_count": len(srv._tools),
+            "resources_count": len(srv._resources)
+        })
+    return res
+
+@app.post("/api/mcp/servers/register")
+def register_mcp_server(payload: schemas.MCPRegisterServerRequest):
+    """
+    Dynamically registers a new MCP Server at runtime (allows mentors & users to plug in 2nd tool / server).
+    """
+    srv = mcp_manager.register_custom_server(
+        name=payload.name,
+        track_code=payload.track_code,
+        description=payload.description,
+        transport_type=payload.transport_type,
+        url_or_cmd=payload.url_or_cmd,
+        custom_tools=payload.custom_tools
+    )
+    return {
+        "status": "success",
+        "message": f"Successfully registered MCP Server '{payload.name}'.",
+        "server": {
+            "server_id": srv.server_id,
+            "name": srv.name,
+            "version": srv.version,
+            "track_code": srv.track_code,
+            "description": srv.description,
+            "transport_type": srv.transport_type
+        }
+    }
+
+@app.delete("/api/mcp/servers/{server_id}")
+def remove_mcp_server(server_id: str):
+    """
+    Removes an MCP Server from the Host registry.
+    """
+    success = mcp_manager.remove_server(server_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"MCP Server '{server_id}' not found.")
+    return {"status": "success", "message": f"Removed MCP Server '{server_id}'."}
+
+@app.post("/api/mcp/handshake/{server_id}")
+def perform_mcp_handshake(server_id: str):
+    """
+    Executes and returns the raw JSON-RPC initialize handshake protocol for an MCP server.
+    """
+    try:
+        return mcp_manager.perform_handshake(server_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.get("/api/mcp/tools")
+def discover_mcp_tools(server_id: Optional[str] = None, track_code: Optional[str] = None):
+    """
+    Issues MCP `tools/list` over JSON-RPC to discover tools dynamically without hardcoding them.
+    """
+    return mcp_manager.discover_tools(server_id=server_id, filter_track=track_code)
+
+@app.post("/api/mcp/tools/call")
+def call_mcp_tool(payload: schemas.MCPToolCallRequest):
+    """
+    Executes a tool over MCP standard `tools/call` JSON-RPC protocol.
+    """
+    try:
+        return mcp_manager.call_tool(
+            tool_name=payload.tool_name,
+            arguments=payload.arguments,
+            server_id=payload.server_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/mcp/agent/run")
+def run_mcp_agent(payload: schemas.MCPAgentRunRequest):
+    """
+    Executes ReAct Agent using dynamic MCP tool discovery (`tools/list` and `tools/call`).
+    Supports 'include_second_server' to demonstrate dynamic tool addition with 0 agent code changes.
+    """
+    return mcp_agent_runner.run_agent_mcp(
+        query=payload.query,
+        track_code=payload.track_code,
+        include_second_server=payload.include_second_server,
+        max_steps=payload.max_steps
+    )
+
+@app.get("/api/mcp/logs")
+def get_mcp_protocol_logs():
+    """
+    Returns stream of raw JSON-RPC protocol messages (`initialize`, `tools/list`, `tools/call`).
+    """
+    return mcp_manager.protocol_logs
+
+@app.get("/api/mcp/architecture")
+def get_mcp_architecture_info():
+    """
+    Returns structural concepts of MCP: Host, Client, Server, and AI execution location.
+    """
+    return {
+        "title": "Module 5 — MCP, Multi-Agent & A2A Architecture",
+        "protocol_version": "2024-11-05",
+        "roles": {
+            "host": "Application running the AI model (LLM), managing context, user interface, and overall agent execution loop.",
+            "client": "MCP Client module that initiates connections, performs JSON-RPC handshake ('initialize'), discovers tools ('tools/list'), and invokes tool actions ('tools/call').",
+            "server": "MCP Tool Provider that exposes tools, resources, and prompts over standard socket (stdio / HTTP). Does NOT run the AI model."
+        },
+        "where_ai_runs": {
+            "answer": "On YOUR side (the Host), NEVER on the MCP tool server.",
+            "explanation": "The MCP tool server is just a plumbing socket. It exposes methods and parameters, executes them when requested, and returns text content. It has no awareness of which LLM or agent is invoking it."
+        },
+        "mcp_benefits": [
+            "Universal socket standard: Build a tool once, reuse across any AI agent or platform.",
+            "Dynamic Tool Discovery: Agent discovers available tools at runtime via 'tools/list' instead of hardcoding schemas.",
+            "Zero Agent Code Modification: Add, remove, or swap MCP tool servers without editing a single line of agent code.",
+            "Safe Plumbing: Clear separation between host intelligence and server capability execution."
+        ]
+    }
+
+
+
 if __name__ == "__main__":
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", 8000))

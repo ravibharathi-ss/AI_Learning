@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { 
-  Plus, 
   Trash2, 
   Bot, 
   User, 
@@ -37,10 +36,12 @@ import {
   Clock,
   DollarSign,
   Activity,
-  Play,
   Sliders,
   Cpu
 } from 'lucide-react';
+
+import { Sidebar } from './components/Sidebar';
+import { McpHub } from './components/McpHub';
 
 interface Feedback {
   id?: number;
@@ -109,7 +110,7 @@ export default function App() {
   };
 
   // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'mcp_hub'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -144,13 +145,13 @@ export default function App() {
   const [w7Query, setW7Query] = useState('My order #90214 custom headset is damaged and I want a full refund.');
   const [w7MaxSteps, setW7MaxSteps] = useState(5);
   const [w7TokenBudget, setW7TokenBudget] = useState(2000);
-  const [w7MemoryMode, setW7MemoryMode] = useState<'short_term' | 'summarized'>('short_term');
+  const [_w7MemoryMode, _setW7MemoryMode] = useState<'short_term' | 'summarized'>('short_term');
   const [w7SubTab, setW7SubTab] = useState<'race' | 'inspector' | 'suite' | 'decision'>('race');
   const [w7RaceData, setW7RaceData] = useState<any | null>(null);
   const [w7AgentData, setW7AgentData] = useState<any | null>(null);
   const [w7SuiteData, setW7SuiteData] = useState<any | null>(null);
   const [isW7Running, setIsW7Running] = useState(false);
-  const [tracksMetadata, setTracksMetadata] = useState<any | null>(null);
+  const [_tracksMetadata, setTracksMetadata] = useState<any | null>(null);
 
   const defaultQueries: Record<string, string> = {
     A: 'My order #90214 custom headset is damaged and I want a full refund.',
@@ -195,31 +196,6 @@ export default function App() {
       }
     } catch (e) {
       console.error("Error running agent vs fixed race:", e);
-    } finally {
-      setIsW7Running(false);
-    }
-  };
-
-  const handleRunW7Agent = async () => {
-    setIsW7Running(true);
-    try {
-      const res = await fetch(`${API_BASE}/agent/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: w7Query,
-          track_code: w7TrackCode,
-          max_steps: w7MaxSteps,
-          token_budget: w7TokenBudget,
-          memory_mode: w7MemoryMode
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setW7AgentData(data);
-      }
-    } catch (e) {
-      console.error("Error running agent loop:", e);
     } finally {
       setIsW7Running(false);
     }
@@ -1011,163 +987,30 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* 1. SIDEBAR */}
-      <aside className="sidebar">
-        {/* Sidebar Header */}
-        <div className="sidebar-header">
-          <div className="sidebar-brand-wrapper">
-            <div className="sidebar-logo">
-              <Bot style={{ color: '#000000' }} size={20} />
-            </div>
-            <div>
-              <h2 className="sidebar-brand-title">AI Assistant</h2>
-              <span className="sidebar-brand-status">
-                <span className="status-dot-pulse"></span>
-                {backendHealth?.mock_mode ? 'Offline' : 'Online'}
-              </span>
-            </div>
-          </div>
-          
-          <button 
-            onClick={() => {
-              setCurrentView('chat');
-              handleStartChat(selectedAgent);
-            }}
-            className="btn-3d btn-3d-secondary"
-            style={{ padding: '8px', borderRadius: '10px' }}
-            title="New Chat Session"
-          >
-            <Plus size={16} />
-          </button>
-        </div>
-
-        {/* Modern Segmented Navigation Panel */}
-        <div className="sidebar-nav-container">
-          <div className="sidebar-nav-grid">
-            <button
-              onClick={() => setCurrentView('chat')}
-              className={`sidebar-nav-tab ${currentView === 'chat' ? 'active-chat' : ''}`}
-            >
-              <Bot size={13} />
-              <span>Chat</span>
-            </button>
-            <button
-              onClick={() => {
-                setCurrentView('kb');
-                fetchDocuments();
-              }}
-              className={`sidebar-nav-tab ${currentView === 'kb' ? 'active-kb' : ''}`}
-            >
-              <BookOpen size={13} />
-              <span>KB Base</span>
-            </button>
-            <button
-              onClick={() => {
-                setCurrentView('debugger');
-                if (!inspectResult) handleInspectQuery("ERR-4032");
-              }}
-              className={`sidebar-nav-tab ${currentView === 'debugger' ? 'active-debugger' : ''}`}
-            >
-              <Wrench size={13} />
-              <span>RAG Debug</span>
-            </button>
-            <button
-              onClick={() => {
-                setCurrentView('error_analysis');
-                fetchTraces();
-                fetchTaxonomySummary();
-              }}
-              className={`sidebar-nav-tab ${currentView === 'error_analysis' ? 'active-error' : ''}`}
-            >
-              <AlertTriangle size={13} />
-              <span>W5 Evals</span>
-            </button>
-            <button
-              onClick={() => {
-                setCurrentView('judge_eval');
-                fetchEvalSummary();
-                fetchBonusRagas();
-              }}
-              className={`sidebar-nav-tab ${currentView === 'judge_eval' ? 'active-judge' : ''}`}
-            >
-              <Scale size={13} />
-              <span>W6 Judge</span>
-            </button>
-            <button
-              onClick={() => {
-                setCurrentView('agent_loops');
-                fetchTracksMetadata();
-                if (!w7RaceData) handleRunW7Race();
-              }}
-              className={`sidebar-nav-tab ${currentView === 'agent_loops' ? 'active-agent' : ''}`}
-            >
-              <Zap size={13} />
-              <span>W7 Agents</span>
-            </button>
-          </div>
-        </div>
-
-        {/* History List */}
-        <div className="sidebar-content">
-          <div className="sidebar-section-title">
-            Conversations
-          </div>
-          {conversations.length === 0 ? (
-            <div style={{ fontSize: '12px', color: '#525252', textAlign: 'center', padding: '30px 10px', lineHeight: '1.6' }}>
-              No chats found.<br />Start a new session!
-            </div>
-          ) : (
-            <div className="conv-list">
-              {conversations.map(c => {
-                const isActive = activeConvId === c.id;
-                return (
-                  <div
-                    key={c.id}
-                    onClick={() => {
-                      setCurrentView('chat');
-                      loadConversation(c.id);
-                    }}
-                    className={`conv-item-btn ${isActive && currentView === 'chat' ? 'active' : ''}`}
-                  >
-                    <div className="conv-item-left">
-                      <div className="conv-item-icon">
-                        <Bot size={13} style={{ color: '#FFFFFF' }} />
-                      </div>
-                      <span className="conv-item-text">{c.title}</span>
-                    </div>
-                    <button
-                      onClick={(e) => handleDeleteConversation(e, c.id)}
-                      className="conv-item-delete-btn"
-                      title="Delete Chat"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar Footer */}
-        <div className="sidebar-footer">
-          <div className="sidebar-footer-left">
-            Connection: <span className="sidebar-footer-status" style={{ color: backendHealth ? '#FFFFFF' : '#EF4444' }}>
-              {backendHealth ? 'Online' : 'Offline'}
-            </span>
-          </div>
-          {backendHealth && (
-            <button 
-              onClick={checkBackendHealth} 
-              className="btn-3d btn-3d-secondary"
-              style={{ padding: '6px', borderRadius: '8px', marginLeft: 'auto' }}
-              title="Refresh connection"
-            >
-              <RefreshCw size={11} />
-            </button>
-          )}
-        </div>
-      </aside>
+      {/* 1. PRODUCTION COLLAPSIBLE SIDE NAVBAR */}
+      <Sidebar
+        currentView={currentView}
+        setCurrentView={(view) => {
+          setCurrentView(view);
+          if (view === 'kb') fetchDocuments();
+          else if (view === 'debugger' && !inspectResult) handleInspectQuery("ERR-4032");
+          else if (view === 'error_analysis') { fetchTraces(); fetchTaxonomySummary(); }
+          else if (view === 'judge_eval') { fetchEvalSummary(); fetchBonusRagas(); }
+          else if (view === 'agent_loops') { fetchTracksMetadata(); if (!w7RaceData) handleRunW7Race(); }
+        }}
+        conversations={conversations}
+        activeConvId={activeConvId}
+        onSelectConversation={(id) => {
+          setCurrentView('chat');
+          loadConversation(id);
+        }}
+        onNewConversation={() => {
+          setCurrentView('chat');
+          handleStartChat(selectedAgent);
+        }}
+        onConfirmDelete={handleDeleteConversation}
+        backendHealth={backendHealth}
+      />
 
       {/* 2. MAIN CHAT AREA */}
       <main className="chat-main">
@@ -1284,10 +1127,13 @@ export default function App() {
           )
         )}
 
-        {/* Message Window / KB Window */}
+        {/* Message Window / KB Window / MCP Hub Window */}
         <div className="chat-scroll-container" ref={chatScrollRef}>
-          <div className="chat-content-width">
-            {currentView === 'kb' ? (
+          <div className="chat-content-width" style={{ maxWidth: currentView === 'mcp_hub' ? '100%' : '1000px', width: '100%' }}>
+            {currentView === 'mcp_hub' ? (
+              /* WEEK 9 MCP HUB VIEW */
+              <McpHub />
+            ) : currentView === 'kb' ? (
               /* KNOWLEDGE BASE VIEW */
               <div className="kb-container animate-scale-in" style={{ padding: '24px 0' }}>
                 <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
