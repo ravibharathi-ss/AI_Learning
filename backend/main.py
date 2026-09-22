@@ -1032,6 +1032,52 @@ def get_mcp_architecture_info():
         ]
     }
 
+# ------------------------------------------------------------------
+# Week 8: Agent Failure Modes, Trajectory Evals & Security Endpoints
+# ------------------------------------------------------------------
+
+from services.agent_eval_service import AgentEvalService
+agent_eval_service = AgentEvalService()
+
+@app.get("/api/agent-eval/failure-modes")
+def get_agent_failure_modes():
+    """
+    Returns taxonomy catalog of agent failure modes (Loop Trap, Wrong Tool, Made-Up Input, Quiet Surrender, Trajectory Gap).
+    """
+    return agent_eval_service.get_failure_taxonomy()
+
+@app.post("/api/agent-eval/inspect-trajectory")
+def inspect_agent_trajectory(payload: schemas.TrajectoryEvalRequest):
+    """
+    Evaluates an agent trajectory against expected tool sequence and detects 'Lucky Right Answer' gaps.
+    """
+    return agent_eval_service.evaluate_trajectory(
+        query=payload.query,
+        actual_trajectory=payload.actual_trajectory,
+        final_answer=payload.final_answer,
+        track_code=payload.track_code
+    )
+
+@app.post("/api/agent-eval/prompt-injection/test")
+def test_prompt_injection(payload: schemas.PromptInjectionTestRequest):
+    """
+    Simulates Direct & Indirect Prompt Injection attacks on the agent and tests defense guardrails.
+    """
+    return agent_eval_service.test_prompt_injection(
+        attack_type=payload.attack_type,
+        track_code=payload.track_code,
+        defense_enabled=payload.defense_enabled
+    )
+
+@app.get("/api/agent-eval/benchmark")
+def run_agent_eval_benchmark():
+    """
+    Executes benchmark across all 6 tracks comparing Baseline Failure Rate vs Post-Mitigation Failure Rate.
+    """
+    return agent_eval_service.run_mitigation_benchmark()
+
+
+
 
 
 if __name__ == "__main__":

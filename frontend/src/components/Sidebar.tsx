@@ -7,6 +7,7 @@ import {
   Scale,
   Zap,
   Cpu,
+  ShieldAlert,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -23,8 +24,8 @@ interface Conversation {
 }
 
 interface SidebarProps {
-  currentView: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'mcp_hub';
-  setCurrentView: (view: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'mcp_hub') => void;
+  currentView: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub';
+  setCurrentView: (view: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub') => void;
   conversations: Conversation[];
   activeConvId: string | null;
   onSelectConversation: (id: string) => void;
@@ -142,7 +143,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="nav-badge">W7</span>
           </button>
 
-          {/* 7. Week 9 MCP Studio */}
+          {/* 7. Week 8 Agent Failure Modes & Security */}
+          <button
+            className={`nav-item-btn ${currentView === 'agent_evals' ? 'active' : ''}`}
+            onClick={() => setCurrentView('agent_evals')}
+            title="Week 8 Agent Failure Modes, Trajectory Evals & Prompt Injection Security"
+          >
+            <ShieldAlert size={18} style={{ color: '#EF4444' }} />
+            <span className="nav-item-text">Agent Security</span>
+            <span className="nav-badge" style={{ background: '#EF4444', color: '#FFF' }}>W8</span>
+          </button>
+
+          {/* 8. Week 9 MCP Studio */}
           <button
             className={`nav-item-btn sidebar-nav-tab active-mcp ${currentView === 'mcp_hub' ? 'active' : ''}`}
             onClick={() => setCurrentView('mcp_hub')}
@@ -150,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Cpu size={18} />
             <span className="nav-item-text">MCP Studio</span>
-            <span className="nav-badge" style={{ background: '#06B6D4', color: '#000' }}>W9 NEW</span>
+            <span className="nav-badge" style={{ background: '#06B6D4', color: '#000' }}>W9</span>
           </button>
         </div>
 
@@ -220,9 +232,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="sidebar-footer-info" style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <ShieldCheck size={14} className="text-emerald-400" />
-            <span>MCP Protocol v2024-11-05</span>
+            <span>Agent Evals & Security Active</span>
           </div>
-          <div style={{ color: 'var(--text-dark)' }}>Tracks A-F Active Socket Support</div>
+          <div style={{ color: 'var(--text-dark)' }}>Tracks A-F Trajectory Alignment</div>
         </div>
       </div>
     </aside>

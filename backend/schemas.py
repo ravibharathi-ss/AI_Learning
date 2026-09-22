@@ -279,4 +279,21 @@ class MCPAgentRunRequest(BaseModel):
     max_steps: int = 5
 
 
+# ------------------------------------------------------------------
+# Week 8: Agent Failure Modes, Trajectory Evals & Security Schemas
+# ------------------------------------------------------------------
+
+class TrajectoryEvalRequest(BaseModel):
+    query: str
+    actual_trajectory: List[str]
+    final_answer: str
+    track_code: str = "A"
+
+class PromptInjectionTestRequest(BaseModel):
+    attack_type: str = "indirect"  # 'direct' or 'indirect'
+    track_code: str = "A"
+    defense_enabled: bool = False
+
+
+
 

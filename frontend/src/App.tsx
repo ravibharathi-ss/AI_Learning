@@ -42,6 +42,7 @@ import {
 
 import { Sidebar } from './components/Sidebar';
 import { McpHub } from './components/McpHub';
+import { AgentEvalHub } from './components/AgentEvalHub';
 
 interface Feedback {
   id?: number;
@@ -110,7 +111,7 @@ export default function App() {
   };
 
   // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'mcp_hub'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -1127,12 +1128,15 @@ export default function App() {
           )
         )}
 
-        {/* Message Window / KB Window / MCP Hub Window */}
+        {/* Message Window / KB Window / MCP Hub / Agent Evals Window */}
         <div className="chat-scroll-container" ref={chatScrollRef}>
-          <div className="chat-content-width" style={{ maxWidth: currentView === 'mcp_hub' ? '100%' : '1000px', width: '100%' }}>
+          <div className="chat-content-width" style={{ maxWidth: (currentView === 'mcp_hub' || currentView === 'agent_evals') ? '100%' : '1000px', width: '100%' }}>
             {currentView === 'mcp_hub' ? (
               /* WEEK 9 MCP HUB VIEW */
               <McpHub />
+            ) : currentView === 'agent_evals' ? (
+              /* WEEK 8 AGENT EVALS & SECURITY VIEW */
+              <AgentEvalHub />
             ) : currentView === 'kb' ? (
               /* KNOWLEDGE BASE VIEW */
               <div className="kb-container animate-scale-in" style={{ padding: '24px 0' }}>
