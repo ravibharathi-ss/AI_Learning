@@ -37,12 +37,14 @@ import {
   DollarSign,
   Activity,
   Sliders,
-  Cpu
+  Cpu,
+  Users
 } from 'lucide-react';
 
 import { Sidebar } from './components/Sidebar';
 import { McpHub } from './components/McpHub';
 import { AgentEvalHub } from './components/AgentEvalHub';
+import { MultiAgentHub } from './components/MultiAgentHub';
 
 interface Feedback {
   id?: number;
@@ -111,7 +113,7 @@ export default function App() {
   };
 
   // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -490,15 +492,21 @@ export default function App() {
   };
 
   const handleDeleteDocument = async (id: string) => {
+    if (!window.confirm("Are you sure you want to remove this document from the Knowledge Base?")) {
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE}/documents/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
         fetchDocuments();
+      } else {
+        alert('Failed to delete document');
       }
     } catch (e) {
       console.error('Failed to delete document:', e);
+      alert('Failed to delete document');
     }
   };
 
@@ -903,15 +911,15 @@ export default function App() {
             const textLines = part.split('\n');
             return textLines.map((line, j) => {
               if (line.startsWith('### ')) {
-                return <h3 key={`${i}-${j}`} style={{ fontSize: '15px', fontWeight: '800', margin: '12px 0 6px 0', color: '#FFFFFF' }}>{line.slice(4)}</h3>;
+                return <h3 key={`${i}-${j}`} style={{ fontSize: '15px', fontWeight: '800', margin: '12px 0 6px 0', color: '#0F172A' }}>{line.slice(4)}</h3>;
               }
               if (line.startsWith('## ')) {
-                return <h2 key={`${i}-${j}`} style={{ fontSize: '17px', fontWeight: '800', margin: '16px 0 8px 0', color: '#FFFFFF' }}>{line.slice(3)}</h2>;
+                return <h2 key={`${i}-${j}`} style={{ fontSize: '17px', fontWeight: '800', margin: '16px 0 8px 0', color: '#0F172A' }}>{line.slice(3)}</h2>;
               }
               if (line.startsWith('1. ') || line.startsWith('2. ') || line.startsWith('3. ') || line.startsWith('4. ')) {
                 return (
                   <div key={`${i}-${j}`} className="custom-list-item">
-                    <span style={{ color: '#FFFFFF', fontWeight: '700' }}>{line.slice(0, 3)}</span>
+                    <span style={{ color: '#0F172A', fontWeight: '700' }}>{line.slice(0, 3)}</span>
                     <span>{line.slice(3)}</span>
                   </div>
                 );
@@ -919,7 +927,7 @@ export default function App() {
               if (line.startsWith('- ') || line.startsWith('* ')) {
                 return (
                   <div key={`${i}-${j}`} className="custom-list-item">
-                    <span style={{ color: '#A3A3A3', marginRight: '6px' }}>✦</span>
+                    <span style={{ color: '#475569', marginRight: '6px' }}>✦</span>
                     <span>{line.slice(2)}</span>
                   </div>
                 );
@@ -930,13 +938,13 @@ export default function App() {
                 const boldParts = line.split(/(\*\*[^*]+\*\*)/g);
                 formattedLine = boldParts.map((bp, k) => {
                   if (bp.startsWith('**') && bp.endsWith('**')) {
-                    return <strong key={k} style={{ color: '#FFFFFF', fontWeight: '700' }}>{bp.slice(2, -2)}</strong>;
+                    return <strong key={k} style={{ color: '#0F172A', fontWeight: '700' }}>{bp.slice(2, -2)}</strong>;
                   }
                   return bp;
                 });
               }
 
-              return <p key={`${i}-${j}`} style={{ margin: '4px 0', color: '#E2E8F0' }}>{formattedLine}</p>;
+              return <p key={`${i}-${j}`} style={{ margin: '4px 0', color: '#1E293B' }}>{formattedLine}</p>;
             });
           }
         })}
@@ -949,7 +957,7 @@ export default function App() {
     general: {
       title: 'AI Assistant',
       desc: 'How can I help you today? Ask questions, search knowledge, or get instant answers.',
-      icon: <Bot style={{ color: '#FFFFFF' }} size={22} />,
+      icon: <Bot style={{ color: '#2563EB' }} size={22} />,
       classKey: 'general',
       badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.08)', color: '#FFFFFF', borderColor: 'rgba(255, 255, 255, 0.2)' },
       suggestions: [
@@ -975,7 +983,7 @@ export default function App() {
       desc: 'Questions about invoices, package plans, cancellations, or secure subscription updates.',
       icon: <CreditCard style={{ color: '#888888' }} size={22} />,
       classKey: 'billing',
-      badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.03)', color: '#A3A3A3', borderColor: 'rgba(255, 255, 255, 0.1)' },
+      badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.03)', color: '#475569', borderColor: 'rgba(255, 255, 255, 0.1)' },
       suggestions: [
         'What are the subscription plans available?',
         'Where can I download my billing invoices?',
@@ -1017,11 +1025,23 @@ export default function App() {
       <main className="chat-main">
         
         {/* Active Header Bar */}
-        {currentView === 'kb' ? (
+        {currentView === 'multi_agent' ? (
+          <div className="chat-header">
+            <div className="chat-header-left">
+              <div className="chat-header-avatar" style={{ background: '#EEF2FF', border: '1px solid #C7D2FE', color: '#4F46E5' }}>
+                <Users size={18} />
+              </div>
+              <div>
+                <h3 className="chat-header-title">Week 10 · Multi-Agent & A2A Studio</h3>
+                <span className="chat-header-subtitle">Empirical Race: Manager plus Two Specialists Squad vs Single Monolithic Agent</span>
+              </div>
+            </div>
+          </div>
+        ) : currentView === 'kb' ? (
           <div className="chat-header">
             <div className="chat-header-left">
               <div className="chat-header-avatar">
-                <BookOpen size={18} style={{ color: '#FFFFFF' }} />
+                <BookOpen size={18} style={{ color: '#2563EB' }} />
               </div>
               <div>
                 <h3 className="chat-header-title">Knowledge Base</h3>
@@ -1128,10 +1148,13 @@ export default function App() {
           )
         )}
 
-        {/* Message Window / KB Window / MCP Hub / Agent Evals Window */}
+        {/* Message Window / KB Window / MCP Hub / Agent Evals Window / Multi-Agent Studio */}
         <div className="chat-scroll-container" ref={chatScrollRef}>
-          <div className="chat-content-width" style={{ maxWidth: (currentView === 'mcp_hub' || currentView === 'agent_evals') ? '100%' : '1000px', width: '100%' }}>
-            {currentView === 'mcp_hub' ? (
+          <div className="chat-content-width" style={{ maxWidth: (currentView === 'mcp_hub' || currentView === 'agent_evals' || currentView === 'multi_agent') ? '100%' : '1000px', width: '100%' }}>
+            {currentView === 'multi_agent' ? (
+              /* WEEK 10 MULTI-AGENT & A2A VIEW */
+              <MultiAgentHub />
+            ) : currentView === 'mcp_hub' ? (
               /* WEEK 9 MCP HUB VIEW */
               <McpHub />
             ) : currentView === 'agent_evals' ? (
@@ -1140,16 +1163,16 @@ export default function App() {
             ) : currentView === 'kb' ? (
               /* KNOWLEDGE BASE VIEW */
               <div className="kb-container animate-scale-in" style={{ padding: '24px 0' }}>
-                <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
-                  <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>Upload Reference Document</h4>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#A3A3A3', lineHeight: '1.5' }}>
-                    Select a text (`.txt`), markdown (`.md`), or JSON (`.json`) file. Its content will be chunked and indexed into the local SQLite embedding database automatically.
+                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
+                  <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>Upload Reference Document</h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#475569', lineHeight: '1.5' }}>
+                    Select a text (`.txt`), markdown (`.md`), JSON (`.json`), or PDF (`.pdf`) document. Its content will be chunked and indexed into the local SQLite embedding database automatically.
                   </p>
                   
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <input 
                       type="file" 
-                      accept=".txt,.md,.json"
+                      accept=".txt,.md,.json,.pdf"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
@@ -1168,7 +1191,7 @@ export default function App() {
                     </label>
                     
                     {isUploading && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#A3A3A3' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#475569' }}>
                         <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
                         <span>Indexing file...</span>
                       </div>
@@ -1176,29 +1199,62 @@ export default function App() {
                   </div>
                 </div>
 
-                <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>Indexed Documents</h4>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 16px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>Indexed Documents</h4>
+                    <span style={{ fontSize: '11px', fontWeight: '600', padding: '2px 8px', borderRadius: '12px', background: '#E0E7FF', color: '#3730A3' }}>
+                      {documents.length} {documents.length === 1 ? 'file' : 'files'}
+                    </span>
+                  </div>
+                </div>
+
                 {documents.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#525252', fontSize: '13px', background: 'rgba(255, 255, 255, 0.01)', border: '1px dashed rgba(255, 255, 255, 0.05)', borderRadius: '12px' }}>
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748B', fontSize: '13px', background: '#FFFFFF', border: '1px dashed #CBD5E1', borderRadius: '12px' }}>
                     No documents indexed yet. Upload a document to start using RAG!
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {documents.map((doc) => (
-                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <FileText size={18} style={{ color: '#FFFFFF' }} />
+                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #E2E8F0', borderRadius: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <FileText size={18} style={{ color: '#2563EB' }} />
+                          </div>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '13px', fontWeight: '600', color: '#E2E8F0' }}>{doc.filename}</span>
-                            <span style={{ fontSize: '11px', color: '#525252', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
+                            <span style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{doc.filename}</span>
+                            <span style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
                           </div>
                         </div>
                         <button
                           onClick={() => handleDeleteDocument(doc.id)}
-                          className="conv-item-delete-btn"
-                          style={{ marginLeft: 'auto', padding: '6px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#EF4444', background: 'rgba(239, 68, 68, 0.05)' }}
-                          title="Delete Document"
+                          style={{
+                            marginLeft: 'auto',
+                            padding: '7px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #FECACA',
+                            color: '#DC2626',
+                            background: '#FEF2F2',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#FEE2E2';
+                            e.currentTarget.style.borderColor = '#FCA5A5';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#FEF2F2';
+                            e.currentTarget.style.borderColor = '#FECACA';
+                          }}
+                          title={`Delete ${doc.filename}`}
                         >
                           <Trash2 size={14} />
+                          <span>Delete</span>
                         </button>
                       </div>
                     ))}
@@ -1210,11 +1266,11 @@ export default function App() {
               <div className="debugger-container animate-scale-in" style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 
                 {/* 1. QUERY TEST & INSPECTOR CONTROL BAR */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px', padding: '20px' }}>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '15px', fontWeight: 'bold', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Search size={16} /> RAG Retrieval Inspector
                   </h4>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#A3A3A3', lineHeight: '1.5' }}>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
                     Test any user prompt or code (e.g. <code>ERR-4032</code>) to inspect exact BM25 keyword ranks, vector similarity, RRF fusion, and failure classification.
                   </p>
 
@@ -1224,7 +1280,7 @@ export default function App() {
                       value={inspectQuery}
                       onChange={(e) => setInspectQuery(e.target.value)}
                       placeholder="Enter question or code (e.g. ERR-4032, return policy)..."
-                      style={{ flex: 1, padding: '12px 16px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', color: '#FFFFFF', fontSize: '13px', fontFamily: 'inherit' }}
+                      style={{ flex: 1, padding: '12px 16px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', color: '#0F172A', fontSize: '13px', fontFamily: 'inherit' }}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleInspectQuery(); }}
                     />
                     <button
@@ -1240,7 +1296,7 @@ export default function App() {
 
                   {/* Preset Test Buttons */}
                   <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600' }}>Quick Test Cases:</span>
+                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600' }}>Quick Test Cases:</span>
                     {["ERR-4032", "What is your refund policy?", "Rocket launch date"].map((preset) => (
                       <button
                         key={preset}
@@ -1248,7 +1304,7 @@ export default function App() {
                           setInspectQuery(preset);
                           handleInspectQuery(preset);
                         }}
-                        style={{ padding: '4px 10px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '8px', color: '#E2E8F0', fontSize: '11px', cursor: 'pointer' }}
+                        style={{ padding: '4px 10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#1E293B', fontSize: '11px', cursor: 'pointer' }}
                       >
                         {preset}
                       </button>
@@ -1257,10 +1313,10 @@ export default function App() {
                 </div>
 
                 {/* 2. RETRIEVAL BENCHMARK EVALUATION METRICS PANEL */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#FFFFFF' }}>Hit-Rate@3 & MRR Benchmark</h4>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#A3A3A3' }}>Measure retrieval accuracy with quantitative numbers before vs after Hybrid Search.</p>
+                    <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#0F172A' }}>Hit-Rate@3 & MRR Benchmark</h4>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Measure retrieval accuracy with quantitative numbers before vs after Hybrid Search.</p>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -1268,11 +1324,11 @@ export default function App() {
                       <div style={{ display: 'flex', gap: '16px', textTransform: 'uppercase' }}>
                         <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '6px 14px', borderRadius: '10px', textAlign: 'center' }}>
                           <span style={{ display: 'block', fontSize: '10px', color: '#38BDF8', fontWeight: 'bold' }}>Hit-Rate@3</span>
-                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#FFFFFF' }}>{evalMetrics.hit_rate_at_3}%</span>
+                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{evalMetrics.hit_rate_at_3}%</span>
                         </div>
                         <div style={{ background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '6px 14px', borderRadius: '10px', textAlign: 'center' }}>
                           <span style={{ display: 'block', fontSize: '10px', color: '#A855F7', fontWeight: 'bold' }}>MRR Score</span>
-                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#FFFFFF' }}>{evalMetrics.mrr}</span>
+                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{evalMetrics.mrr}</span>
                         </div>
                       </div>
                     )}
@@ -1312,26 +1368,26 @@ export default function App() {
                           <AlertTriangle size={18} style={{
                             color: inspectResult.failure_diagnostic.classification === 'SUCCESS' ? '#10B981' : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE' ? '#EF4444' : '#F59E0B'
                           }} />
-                          <span style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#FFFFFF' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#0F172A' }}>
                             Diagnostic: {inspectResult.failure_diagnostic.classification}
                           </span>
                         </div>
-                        <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: '#E2E8F0', fontWeight: 'bold' }}>
+                        <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: '#1E293B', fontWeight: 'bold' }}>
                           {inspectResult.failure_diagnostic.subtype}
                         </span>
                       </div>
-                      <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#E2E8F0', lineHeight: '1.5' }}>
+                      <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#1E293B', lineHeight: '1.5' }}>
                         <strong>Reason:</strong> {inspectResult.failure_diagnostic.reason}
                       </p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#A3A3A3' }}>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>
                         <strong>Recommended Remedy:</strong> {inspectResult.failure_diagnostic.remedy}
                       </p>
                     </div>
 
                     {/* B. Step 1: Query Rewriting & Tokens */}
-                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '14px', padding: '16px' }}>
+                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '16px' }}>
                       <h5 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'bold', color: '#38BDF8' }}>1. Query Rewriting & Keyword Tokens</h5>
-                      <div style={{ fontSize: '12px', color: '#E2E8F0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{ fontSize: '12px', color: '#1E293B', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <div><strong>Original Query:</strong> "{inspectResult.query_info.original_query}"</div>
                         <div><strong>Rewritten Search Query:</strong> "{inspectResult.query_info.rewritten_query}"</div>
                         <div><strong>Extracted Keyword Tokens:</strong> {inspectResult.query_info.tokens.map((t: string) => <span key={t} style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', margin: '0 3px', fontFamily: 'monospace' }}>{t}</span>)}</div>
@@ -1342,7 +1398,7 @@ export default function App() {
                     </div>
 
                     {/* C. Step 2: Hybrid Search & Reranking Table */}
-                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '14px', padding: '16px' }}>
+                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '16px' }}>
                       <h5 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: 'bold', color: '#A855F7' }}>2. Hybrid RRF Search & Reranker Breakdown</h5>
                       
                       {inspectResult.retrieved_chunks.length === 0 ? (
@@ -1352,12 +1408,12 @@ export default function App() {
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {inspectResult.retrieved_chunks.map((c: any, index: number) => (
-                            <div key={c.id} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px', fontWeight: 'bold', color: '#FFFFFF' }}>
+                            <div key={c.id} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '12px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px', fontWeight: 'bold', color: '#0F172A' }}>
                                 <span>Rank #{index + 1} — [{c.filename}]</span>
                                 <span style={{ color: '#10B981' }}>Final Rerank Score: {c.score}</span>
                               </div>
-                              <p style={{ fontSize: '12px', color: '#A3A3A3', margin: '0 0 8px 0', fontFamily: 'monospace', background: 'rgba(0,0,0,0.4)', padding: '8px', borderRadius: '6px' }}>
+                              <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 8px 0', fontFamily: 'monospace', background: '#F8FAFC', padding: '8px', borderRadius: '6px' }}>
                                 "{c.content}"
                               </p>
                               <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#94A3B8' }}>
@@ -1372,18 +1428,18 @@ export default function App() {
                     </div>
 
                     {/* D. Step 3: Full Context & LLM Response */}
-                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '14px', padding: '16px' }}>
+                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '16px' }}>
                       <h5 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'bold', color: '#10B981' }}>3. System Context & LLM Generation</h5>
-                      <div style={{ fontSize: '12px', color: '#E2E8F0' }}>
+                      <div style={{ fontSize: '12px', color: '#1E293B' }}>
                         <div style={{ marginBottom: '10px' }}>
-                          <strong style={{ display: 'block', marginBottom: '4px', color: '#A3A3A3' }}>System Prompt Sent to LLM:</strong>
-                          <pre style={{ background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '8px', fontSize: '11px', color: '#94A3B8', whiteSpace: 'pre-wrap', maxHeight: '120px', overflowY: 'auto' }}>
+                          <strong style={{ display: 'block', marginBottom: '4px', color: '#475569' }}>System Prompt Sent to LLM:</strong>
+                          <pre style={{ background: '#F8FAFC', padding: '10px', borderRadius: '8px', fontSize: '11px', color: '#94A3B8', whiteSpace: 'pre-wrap', maxHeight: '120px', overflowY: 'auto' }}>
                             {inspectResult.system_prompt}
                           </pre>
                         </div>
                         <div>
-                          <strong style={{ display: 'block', marginBottom: '4px', color: '#FFFFFF' }}>Generated LLM Output:</strong>
-                          <div style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px', borderRadius: '8px', fontSize: '13px', lineHeight: '1.6', color: '#FFFFFF' }}>
+                          <strong style={{ display: 'block', marginBottom: '4px', color: '#0F172A' }}>Generated LLM Output:</strong>
+                          <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', padding: '12px', borderRadius: '8px', fontSize: '13px', lineHeight: '1.6', color: '#0F172A' }}>
                             {inspectResult.llm_response}
                           </div>
                         </div>
@@ -1399,16 +1455,16 @@ export default function App() {
                 
                 {/* 1. TOP STATS OVERVIEW HEADER CARDS */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Sampled Traces Read</span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Sampled Traces Read</span>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
                       {taxonomySummary ? `${taxonomySummary.sample_size} / 20` : '0 / 20'}
                     </span>
                     <span style={{ fontSize: '10px', color: '#10B981', display: 'block', marginTop: '2px' }}>Fair sample collected</span>
                   </div>
 
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Pass vs Failure Rate</span>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Pass vs Failure Rate</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                       <span style={{ fontSize: '13px', fontWeight: '700', color: '#10B981', background: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
                         ✓ {taxonomySummary ? taxonomySummary.passes_count : 0} Pass
@@ -1419,27 +1475,27 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Open-Coded Notes</span>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Open-Coded Notes</span>
                     <span style={{ fontSize: '20px', fontWeight: '800', color: '#38BDF8' }}>
                       {taxonomySummary ? taxonomySummary.annotated_count : 0} Notes
                     </span>
-                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>Written before grouping</span>
+                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>Written before grouping</span>
                   </div>
 
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Top Ranked Problem</span>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
+                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Top Ranked Problem</span>
                     <span style={{ fontSize: '13px', fontWeight: '800', color: '#F59E0B', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? `#1 ${taxonomySummary.ranked_taxonomy[0].category_name}` : 'None'}
                     </span>
-                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>
+                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>
                       Score (F×S): {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? taxonomySummary.ranked_taxonomy[0].score : 0}
                     </span>
                   </div>
 
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
                     <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: '700', display: 'block', marginBottom: '4px' }}>Target Fix Selected</span>
-                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#FFFFFF', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#0F172A', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {taxonomySummary && taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'No Target Set'}
                     </span>
                     <span style={{ fontSize: '10px', color: taxonomySummary && taxonomySummary.chosen_target?.prediction ? '#10B981' : '#F59E0B', display: 'block', marginTop: '2px' }}>
@@ -1519,8 +1575,8 @@ export default function App() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     
                     {/* Track & Status Filters */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.02)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '12px 16px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
+                      <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Filter size={12} /> Filter Track:
                       </span>
                       {[
@@ -1555,7 +1611,7 @@ export default function App() {
                       ))}
 
                       <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold' }}>Status:</span>
+                        <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold' }}>Status:</span>
                         {['all', 'unannotated', 'failure', 'pass'].map((st) => (
                           <button
                             key={st}
@@ -1587,12 +1643,12 @@ export default function App() {
                       {/* Left: Scrollable List of 20 Sampled Traces */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '680px', overflowY: 'auto', paddingRight: '4px' }}>
                         {isFetchingTraces ? (
-                          <div style={{ padding: '40px', textAlign: 'center', color: '#A3A3A3', fontSize: '12px' }}>
+                          <div style={{ padding: '40px', textAlign: 'center', color: '#475569', fontSize: '12px' }}>
                             <RefreshCw size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
                             <div style={{ marginTop: '8px' }}>Fetching traces...</div>
                           </div>
                         ) : traces.length === 0 ? (
-                          <div style={{ padding: '30px', textAlign: 'center', color: '#A3A3A3', fontSize: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
+                          <div style={{ padding: '30px', textAlign: 'center', color: '#475569', fontSize: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
                             No traces match criteria. Click "Seed 20 Sample Traces" to populate!
                           </div>
                         ) : (
@@ -1628,18 +1684,18 @@ export default function App() {
                                       </span>
                                     )
                                   ) : (
-                                    <span style={{ fontSize: '10px', color: '#A3A3A3', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
+                                    <span style={{ fontSize: '10px', color: '#475569', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
                                       Unannotated
                                     </span>
                                   )}
                                 </div>
 
-                                <div style={{ fontSize: '12px', fontWeight: '600', color: '#FFFFFF', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: '#0F172A', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                                   {trace.query}
                                 </div>
 
                                 {anno && anno.honest_note && (
-                                  <div style={{ fontSize: '11px', color: '#A3A3A3', fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '6px', marginTop: '6px' }}>
+                                  <div style={{ fontSize: '11px', color: '#475569', fontStyle: 'italic', background: '#F8FAFC', padding: '6px', borderRadius: '6px', marginTop: '6px' }}>
                                     "{anno.honest_note}"
                                   </div>
                                 )}
@@ -1651,21 +1707,21 @@ export default function App() {
 
                       {/* Right: Detailed Complete Trace Inspector & Open Coding Form */}
                       {selectedTrace ? (
-                        <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           
                           {/* Top Bar Details */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '10px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#FFFFFF' }}>Trace Details: {selectedTrace.id}</span>
-                              <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#E2E8F0' }}>Track {selectedTrace.track_code}</span>
+                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>Trace Details: {selectedTrace.id}</span>
+                              <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#1E293B' }}>Track {selectedTrace.track_code}</span>
                             </div>
-                            <span style={{ fontSize: '11px', color: '#A3A3A3' }}>Latency: {selectedTrace.latency_ms}ms</span>
+                            <span style={{ fontSize: '11px', color: '#475569' }}>Latency: {selectedTrace.latency_ms}ms</span>
                           </div>
 
                           {/* Section A: User Question */}
                           <div>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#38BDF8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>1. User Request / Question</span>
-                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#FFFFFF', background: 'rgba(0,0,0,0.4)', padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', background: '#F8FAFC', padding: '10px 14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
                               {selectedTrace.query}
                             </div>
                           </div>
@@ -1686,18 +1742,18 @@ export default function App() {
                                 return (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     {chunks.map((c: any, idx: number) => (
-                                      <div key={idx} style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '10px', fontSize: '12px' }}>
+                                      <div key={idx} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '10px', fontSize: '12px' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38BDF8', fontWeight: 'bold', marginBottom: '4px' }}>
                                           <span>File: {c.filename}</span>
                                           {c.score && <span>Score: {c.score}</span>}
                                         </div>
-                                        <p style={{ margin: 0, color: '#A3A3A3', fontFamily: 'monospace' }}>"{c.content}"</p>
+                                        <p style={{ margin: 0, color: '#475569', fontFamily: 'monospace' }}>"{c.content}"</p>
                                       </div>
                                     ))}
                                   </div>
                                 );
                               } catch {
-                                return <div style={{ fontSize: '12px', color: '#A3A3A3' }}>Raw Context: {selectedTrace.retrieved_chunks_json}</div>;
+                                return <div style={{ fontSize: '12px', color: '#475569' }}>Raw Context: {selectedTrace.retrieved_chunks_json}</div>;
                               }
                             })()}
                           </div>
@@ -1705,17 +1761,17 @@ export default function App() {
                           {/* Section C: What the App Answered */}
                           <div>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>3. What the App Answered</span>
-                            <div style={{ fontSize: '12px', color: '#E2E8F0', background: 'rgba(0,0,0,0.4)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                            <div style={{ fontSize: '12px', color: '#1E293B', background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
                               {selectedTrace.llm_response}
                             </div>
                           </div>
 
                           {/* Section D: OPEN CODING & EVALUATION FORM */}
-                          <div style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '14px', padding: '16px', marginTop: '6px' }}>
-                            <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{ background: '#F8FAFC', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '14px', padding: '16px', marginTop: '6px' }}>
+                            <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <ShieldAlert size={16} style={{ color: '#38BDF8' }} /> Hand-Coding & Error Annotation
                             </h4>
-                            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#A3A3A3' }}>
+                            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#475569' }}>
                               Requirement: Read the answer honestly and write <strong>one sentence about what went wrong</strong> before assigning problem category.
                             </p>
 
@@ -1762,14 +1818,14 @@ export default function App() {
 
                             {/* Honest Sentence Note Input */}
                             <div style={{ marginBottom: '12px' }}>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
                                 Honest Open-Coding Note (1 Sentence):
                               </label>
                               <textarea
                                 value={openCodeNote}
                                 onChange={(e) => setOpenCodeNote(e.target.value)}
                                 placeholder="Describe exactly what failed (e.g. LLM recommended 1:1 almond flour swap ignoring retrieved gluten warning)..."
-                                style={{ width: '100%', height: '60px', padding: '10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px', fontFamily: 'inherit' }}
+                                style={{ width: '100%', height: '60px', padding: '10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#0F172A', fontSize: '12px', fontFamily: 'inherit' }}
                               />
                             </div>
 
@@ -1777,7 +1833,7 @@ export default function App() {
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '12px', marginBottom: '14px' }}>
                                 {/* Category Name */}
                                 <div>
-                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
                                     Problem Category Name:
                                   </label>
                                   <input
@@ -1786,7 +1842,7 @@ export default function App() {
                                     onChange={(e) => setOpenCodeCategory(e.target.value)}
                                     placeholder="e.g. Hallucination / Fact Distortion"
                                     list="category-suggestions"
-                                    style={{ width: '100%', padding: '8px 10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px' }}
+                                    style={{ width: '100%', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#0F172A', fontSize: '12px' }}
                                   />
                                   <datalist id="category-suggestions">
                                     <option value="Hallucination / Fact Distortion" />
@@ -1799,13 +1855,13 @@ export default function App() {
 
                                 {/* Severity Selector */}
                                 <div>
-                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
                                     Severity (S):
                                   </label>
                                   <select
                                     value={openCodeSeverity}
                                     onChange={(e: any) => setOpenCodeSeverity(e.target.value)}
-                                    style={{ width: '100%', padding: '8px 10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px' }}
+                                    style={{ width: '100%', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#0F172A', fontSize: '12px' }}
                                   >
                                     <option value="low">Low (1x)</option>
                                     <option value="medium">Medium (2x)</option>
@@ -1841,7 +1897,7 @@ export default function App() {
 
                         </div>
                       ) : (
-                        <div style={{ padding: '60px', textAlign: 'center', color: '#A3A3A3', background: 'rgba(255,255,255,0.02)', borderRadius: '16px' }}>
+                        <div style={{ padding: '60px', textAlign: 'center', color: '#475569', background: 'rgba(255,255,255,0.02)', borderRadius: '16px' }}>
                           Select a trace from the left panel to inspect and open code.
                         </div>
                       )}
@@ -1855,11 +1911,11 @@ export default function App() {
                 {eaSubTab === 'taxonomy' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
-                    <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px' }}>
-                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>
+                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px' }}>
+                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>
                         Ranked Error Taxonomy Matrix (Frequency × Severity)
                       </h4>
-                      <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#A3A3A3' }}>
+                      <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#475569' }}>
                         Calculated ranking: <strong>Error Score = Frequency (F) × Average Severity Weight (S)</strong>. Surface what hurts most first.
                       </p>
 
@@ -1893,9 +1949,9 @@ export default function App() {
                                     }}>
                                       #{item.rank}
                                     </span>
-                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#FFFFFF' }}>{item.category_name}</span>
+                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{item.category_name}</span>
                                     {isTarget && (
-                                      <span style={{ fontSize: '11px', background: '#A855F7', color: '#FFFFFF', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                                      <span style={{ fontSize: '11px', background: '#A855F7', color: '#0F172A', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
                                         ★ Chosen #1 Fix Target
                                       </span>
                                     )}
@@ -1903,7 +1959,7 @@ export default function App() {
 
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                     <div style={{ textAlign: 'right' }}>
-                                      <span style={{ display: 'block', fontSize: '10px', color: '#A3A3A3' }}>Freq × Sev Score</span>
+                                      <span style={{ display: 'block', fontSize: '10px', color: '#475569' }}>Freq × Sev Score</span>
                                       <span style={{ fontSize: '18px', fontWeight: '900', color: '#F59E0B' }}>{item.score}</span>
                                     </div>
                                     <button
@@ -1922,9 +1978,9 @@ export default function App() {
                                 </div>
 
                                 {/* List of Honest Notes under this category */}
-                                <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '8px', padding: '10px 12px' }}>
-                                  <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Honest Open-Coding Notes:</span>
-                                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#E2E8F0', lineHeight: '1.5' }}>
+                                <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '10px 12px' }}>
+                                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Honest Open-Coding Notes:</span>
+                                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#1E293B', lineHeight: '1.5' }}>
                                     {item.honest_notes.map((note: string, idx: number) => (
                                       <li key={idx} style={{ marginBottom: '2px' }}>{note}</li>
                                     ))}
@@ -1935,7 +1991,7 @@ export default function App() {
                           })}
                         </div>
                       ) : (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#A3A3A3', fontSize: '12px' }}>
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#475569', fontSize: '12px' }}>
                           No annotated failure categories yet. Hand-read traces in Sub-Tab 1 to build the taxonomy!
                         </div>
                       )}
@@ -1947,19 +2003,19 @@ export default function App() {
                         <h4 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: 'bold', color: '#A855F7', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Target size={16} /> Target Fix Selection & Written Prediction
                         </h4>
-                        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#E2E8F0' }}>
+                        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#1E293B' }}>
                           Target Category: <strong>{taxonomySummary.chosen_target.category_name}</strong>
                         </p>
 
                         <div style={{ marginBottom: '12px' }}>
-                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#E2E8F0', marginBottom: '4px' }}>
+                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
                             Write Prediction First (What do you expect to happen after fixing this problem?):
                           </label>
                           <textarea
                             value={targetPredictionInput}
                             onChange={(e) => setTargetPredictionInput(e.target.value)}
                             placeholder="e.g. By reinforcing strict context grounding in system prompt and lowering temperature, we predict hallucination rate will drop by 75% on factual policy queries..."
-                            style={{ width: '100%', height: '80px', padding: '10px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '8px', color: '#FFFFFF', fontSize: '12px', fontFamily: 'inherit' }}
+                            style={{ width: '100%', height: '80px', padding: '10px', background: '#F8FAFC', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '8px', color: '#0F172A', fontSize: '12px', fontFamily: 'inherit' }}
                           />
                         </div>
 
@@ -1979,12 +2035,12 @@ export default function App() {
 
                 {/* 5. SUB-TAB 3: DELIVERABLE & MENTOR REVIEW REPORT */}
                 {eaSubTab === 'report' && taxonomySummary && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px' }}>
                       <div>
-                        <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Week 5 Deliverable · Mentor Review Summary</h3>
-                        <span style={{ fontSize: '12px', color: '#A3A3A3' }}>Evaluated Task Brief: Traces Hand-Read, Open Coding, Ranked Taxonomy, Chosen Target & Written Prediction</span>
+                        <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Week 5 Deliverable · Mentor Review Summary</h3>
+                        <span style={{ fontSize: '12px', color: '#475569' }}>Evaluated Task Brief: Traces Hand-Read, Open Coding, Ranked Taxonomy, Chosen Target & Written Prediction</span>
                       </div>
 
                       <button
@@ -2022,7 +2078,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                     </div>
 
                     {/* Deliverable Document Preview */}
-                    <div style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '20px', fontSize: '13px', color: '#E2E8F0', lineHeight: '1.6' }}>
+                    <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '20px', fontSize: '13px', color: '#1E293B', lineHeight: '1.6' }}>
                       <h4 style={{ color: '#38BDF8', marginTop: 0 }}>✓ Mentor Check 1: Fair Random Sample Audit</h4>
                       <p>Read <strong>{taxonomySummary.sample_size} real traces</strong> across Tracks A-F. Identified {taxonomySummary.passes_count} accurate passes and {taxonomySummary.failures_count} real failures.</p>
 
@@ -2033,8 +2089,8 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
                         {taxonomySummary.ranked_taxonomy.map((item: any) => (
                           <div key={item.category_name} style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '8px', borderLeft: item.is_chosen_target ? '4px solid #A855F7' : '4px solid #38BDF8' }}>
-                            <div style={{ fontWeight: 'bold', color: '#FFFFFF' }}>Rank #{item.rank}: {item.category_name} (Score: {item.score})</div>
-                            <div style={{ fontSize: '11px', color: '#A3A3A3' }}>Freq: {item.frequency} traces | Sev Weight: {item.avg_severity_weight}x</div>
+                            <div style={{ fontWeight: 'bold', color: '#0F172A' }}>Rank #{item.rank}: {item.category_name} (Score: {item.score})</div>
+                            <div style={{ fontSize: '11px', color: '#475569' }}>Freq: {item.frequency} traces | Sev Weight: {item.avg_severity_weight}x</div>
                           </div>
                         ))}
                       </div>
@@ -2042,7 +2098,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <h4 style={{ color: '#10B981', marginTop: '16px' }}>✓ Mentor Check 4: Chosen Target & Written Prediction</h4>
                       <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '14px', borderRadius: '10px' }}>
                         <div style={{ fontWeight: 'bold', color: '#10B981' }}>Chosen #1 Target: {taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'Not set'}</div>
-                        <p style={{ margin: '6px 0 0 0', fontStyle: 'italic', color: '#FFFFFF' }}>"{taxonomySummary.chosen_target?.prediction || 'No prediction recorded yet.'}"</p>
+                        <p style={{ margin: '6px 0 0 0', fontStyle: 'italic', color: '#0F172A' }}>"{taxonomySummary.chosen_target?.prediction || 'No prediction recorded yet.'}"</p>
                       </div>
                     </div>
 
@@ -2058,25 +2114,25 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                   
                   {/* Agreement Before vs After */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
                     <span style={{ fontSize: '11px', color: '#10B981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                       <TrendingUp size={13} /> Judge Agreement
                     </span>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                      <span style={{ fontSize: '22px', fontWeight: '900', color: '#FFFFFF' }}>
+                      <span style={{ fontSize: '22px', fontWeight: '900', color: '#0F172A' }}>
                         {evalSummary ? `${evalSummary.agreement_after}%` : '100%'}
                       </span>
                       <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold' }}>
                         (from {evalSummary ? `${evalSummary.agreement_before}%` : '76.9%'})
                       </span>
                     </div>
-                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>
+                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>
                       +{evalSummary ? evalSummary.agreement_delta : '23.1'}% calibration gain
                     </span>
                   </div>
 
                   {/* Assertion vs Judge Split */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
                     <span style={{ fontSize: '11px', color: '#38BDF8', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                       <ShieldCheck size={13} /> Criteria Split
                     </span>
@@ -2084,22 +2140,22 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <span style={{ fontSize: '12px', fontWeight: '800', color: '#38BDF8', background: 'rgba(56,189,248,0.12)', padding: '2px 8px', borderRadius: '6px' }}>
                         4 Assertions
                       </span>
-                      <span style={{ fontSize: '11px', color: '#A3A3A3' }}>vs</span>
+                      <span style={{ fontSize: '11px', color: '#475569' }}>vs</span>
                       <span style={{ fontSize: '12px', fontWeight: '800', color: '#A855F7', background: 'rgba(168,85,247,0.12)', padding: '2px 8px', borderRadius: '6px' }}>
                         1 Judge
                       </span>
                     </div>
-                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '4px' }}>
+                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '4px' }}>
                       Deterministic rules stripped from LLM prompt
                     </span>
                   </div>
 
                   {/* Blind Hand-Labels Provenance */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
                     <span style={{ fontSize: '11px', color: '#F59E0B', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                       <GitCommit size={13} /> Blind Hand-Labels
                     </span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF' }}>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
                       {evalSummary ? evalSummary.total_cases : 26} Cases
                     </span>
                     <span style={{ fontSize: '10px', color: '#10B981', display: 'block', marginTop: '2px' }}>
@@ -2108,26 +2164,26 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                   </div>
 
                   {/* Real Regression Traces */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
                     <span style={{ fontSize: '11px', color: '#EC4899', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                       <RefreshCw size={13} /> Regressions
                     </span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#FFFFFF' }}>
+                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
                       {evalSummary ? evalSummary.regression_cases_count : 2} Replayed
                     </span>
-                    <span style={{ fontSize: '10px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>
+                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>
                       Verbatim failed traces from Track F
                     </span>
                   </div>
 
                   {/* Bonus RAGAS Metric */}
-                  <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
                     <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                       <AlertTriangle size={13} /> Bonus RAGAS Trap
                     </span>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                       <span style={{ fontSize: '14px', fontWeight: '800', color: '#10B981' }}>0.96 Faith</span>
-                      <span style={{ fontSize: '12px', color: '#A3A3A3' }}>/</span>
+                      <span style={{ fontSize: '12px', color: '#475569' }}>/</span>
                       <span style={{ fontSize: '14px', fontWeight: '800', color: '#EF4444' }}>0.00 Prec</span>
                     </div>
                     <span style={{ fontSize: '10px', color: '#EF4444', display: 'block', marginTop: '2px' }}>
@@ -2224,8 +2280,8 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     
                     {/* Filters & Filter counts */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', background: 'rgba(255, 255, 255, 0.02)', padding: '12px 16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span style={{ fontSize: '11px', color: '#A3A3A3', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '12px 16px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
+                      <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Filter size={12} /> View Filter:
                       </span>
                       {[
@@ -2299,11 +2355,11 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                                   </div>
                                 </div>
 
-                                <span style={{ fontSize: '12px', fontWeight: '600', color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <span style={{ fontSize: '12px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {c.query}
                                 </span>
 
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#A3A3A3' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#475569' }}>
                                   <span>{c.taxonomy_mode}</span>
                                   {hadV1Disagreement && (
                                     <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>⚠️ v1 Disagreed</span>
@@ -2316,13 +2372,13 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                       {/* Right: Detailed Comparative Card */}
                       {selectedEvalCase ? (
-                        <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           
                           {/* Case Header */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#FFFFFF' }}>{selectedEvalCase.id}: {selectedEvalCase.contract_title}</h4>
+                                <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{selectedEvalCase.id}: {selectedEvalCase.contract_title}</h4>
                                 {selectedEvalCase.is_regression && (
                                   <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#EC4899', background: 'rgba(236,72,153,0.15)', padding: '2px 6px', borderRadius: '4px' }}>
                                     {selectedEvalCase.regression_source}
@@ -2335,7 +2391,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                             </div>
 
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '11px', color: '#A3A3A3' }}>Blind Human Label:</span>
+                              <span style={{ fontSize: '11px', color: '#475569' }}>Blind Human Label:</span>
                               <span style={{ fontSize: '12px', fontWeight: '800', color: selectedEvalCase.human_verdict === 'PASS' ? '#10B981' : '#EF4444', background: selectedEvalCase.human_verdict === 'PASS' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', padding: '3px 8px', borderRadius: '6px' }}>
                                 {selectedEvalCase.human_verdict}
                               </span>
@@ -2344,16 +2400,16 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                           {/* Query & Answer */}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div style={{ background: 'rgba(0,0,0,0.4)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                               <span style={{ fontSize: '11px', color: '#38BDF8', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Contract Excerpt Context:</span>
-                              <div style={{ fontSize: '12px', color: '#E2E8F0', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto' }}>
+                              <div style={{ fontSize: '12px', color: '#1E293B', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto' }}>
                                 {selectedEvalCase.contract_context}
                               </div>
                             </div>
 
-                            <div style={{ background: 'rgba(0,0,0,0.4)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                            <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                               <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>AI Model Answer:</span>
-                              <div style={{ fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto' }}>
+                              <div style={{ fontSize: '12px', color: '#0F172A', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto' }}>
                                 {selectedEvalCase.model_answer}
                               </div>
                             </div>
@@ -2366,12 +2422,12 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                             </span>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
                               {Object.entries(selectedEvalCase.assertions.assertions).map(([key, val]: [string, any]) => (
-                                <div key={key} style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: '8px', border: val.passed ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(239,68,68,0.2)' }}>
+                                <div key={key} style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '8px', border: val.passed ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(239,68,68,0.2)' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold', color: val.passed ? '#10B981' : '#EF4444' }}>
                                     {val.passed ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
                                     {key.replace(/_/g, ' ')}
                                   </div>
-                                  <span style={{ fontSize: '10px', color: '#A3A3A3', marginTop: '2px', display: 'block' }}>{val.message}</span>
+                                  <span style={{ fontSize: '10px', color: '#475569', marginTop: '2px', display: 'block' }}>{val.message}</span>
                                 </div>
                               ))}
                             </div>
@@ -2388,7 +2444,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                                   Verdict: {selectedEvalCase.judge_v1.verdict}
                                 </span>
                               </div>
-                              <p style={{ margin: 0, fontSize: '11px', color: '#E2E8F0', lineHeight: '1.4' }}>
+                              <p style={{ margin: 0, fontSize: '11px', color: '#1E293B', lineHeight: '1.4' }}>
                                 {selectedEvalCase.judge_v1.reasoning}
                               </p>
                               {!selectedEvalCase.judge_v1.is_agreement && (
@@ -2406,7 +2462,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                                   Verdict: {selectedEvalCase.judge_v2.verdict}
                                 </span>
                               </div>
-                              <p style={{ margin: 0, fontSize: '11px', color: '#E2E8F0', lineHeight: '1.4' }}>
+                              <p style={{ margin: 0, fontSize: '11px', color: '#1E293B', lineHeight: '1.4' }}>
                                 {selectedEvalCase.judge_v2.reasoning}
                               </p>
                               <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 'bold', display: 'block', marginTop: '6px' }}>
@@ -2417,8 +2473,8 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                           </div>
 
                           {/* RAGAS Faithfulness & Precision */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)', fontSize: '11px' }}>
-                            <span style={{ color: '#A3A3A3' }}>RAGAS Metrics:</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '11px' }}>
+                            <span style={{ color: '#475569' }}>RAGAS Metrics:</span>
                             <div style={{ display: 'flex', gap: '16px' }}>
                               <span>Faithfulness: <strong style={{ color: '#10B981' }}>{selectedEvalCase.ragas.faithfulness}</strong></span>
                               <span>Context Precision: <strong style={{ color: selectedEvalCase.ragas.context_precision > 0 ? '#10B981' : '#EF4444' }}>{selectedEvalCase.ragas.context_precision}</strong></span>
@@ -2428,7 +2484,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                         </div>
                       ) : (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#525252' }}>Select a case to inspect details</div>
+                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748B' }}>Select a case to inspect details</div>
                       )}
 
                     </div>
@@ -2438,15 +2494,15 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                 {/* 4. SUB-TAB 2: TAXONOMY PASS RATE TABLE */}
                 {w6SubTab === 'taxonomy' && evalSummary && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Taxonomy Mode Pass Rate Breakdown (Week-5 Taxonomy)</h3>
-                      <span style={{ fontSize: '12px', color: '#A3A3A3' }}>Evaluating pass rate per failure mode prevents overall averages from hiding category regressions</span>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Taxonomy Mode Pass Rate Breakdown (Week-5 Taxonomy)</h3>
+                      <span style={{ fontSize: '12px', color: '#475569' }}>Evaluating pass rate per failure mode prevents overall averages from hiding category regressions</span>
                     </div>
 
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#A3A3A3' }}>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#475569' }}>
                           <th style={{ padding: '12px 10px' }}>Week-5 Taxonomy Mode</th>
                           <th style={{ padding: '12px 10px' }}>Total Cases</th>
                           <th style={{ padding: '12px 10px' }}>Pass</th>
@@ -2458,8 +2514,8 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <tbody>
                         {evalSummary.taxonomy_summary.map((t: any) => (
                           <tr key={t.mode} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                            <td style={{ padding: '12px 10px', fontWeight: '600', color: '#FFFFFF' }}>{t.mode}</td>
-                            <td style={{ padding: '12px 10px', color: '#E2E8F0' }}>{t.total}</td>
+                            <td style={{ padding: '12px 10px', fontWeight: '600', color: '#0F172A' }}>{t.mode}</td>
+                            <td style={{ padding: '12px 10px', color: '#1E293B' }}>{t.total}</td>
                             <td style={{ padding: '12px 10px', color: '#10B981', fontWeight: 'bold' }}>{t.passed}</td>
                             <td style={{ padding: '12px 10px', color: '#EF4444', fontWeight: 'bold' }}>{t.failed}</td>
                             <td style={{ padding: '12px 10px' }}>
@@ -2467,7 +2523,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                                 <div style={{ flex: 1, background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
                                   <div style={{ width: `${t.pass_rate_pct}%`, background: t.pass_rate_pct >= 70 ? '#10B981' : t.pass_rate_pct >= 40 ? '#F59E0B' : '#EF4444', height: '100%' }} />
                                 </div>
-                                <span style={{ fontWeight: 'bold', color: '#FFFFFF', minWidth: '40px' }}>{t.pass_rate_pct}%</span>
+                                <span style={{ fontWeight: 'bold', color: '#0F172A', minWidth: '40px' }}>{t.pass_rate_pct}%</span>
                               </div>
                             </td>
                             <td style={{ padding: '12px 10px' }}>
@@ -2476,7 +2532,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                                   {t.regression_cases} Trace(s)
                                 </span>
                               ) : (
-                                <span style={{ color: '#525252' }}>-</span>
+                                <span style={{ color: '#64748B' }}>-</span>
                               )}
                             </td>
                           </tr>
@@ -2488,17 +2544,17 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                 {/* 5. SUB-TAB 3: DISAGREEMENTS ANALYSIS & PREDICTION */}
                 {w6SubTab === 'disagreements' && evalSummary && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
                     <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Disagreement Analysis & Verdict (Who Was Right)</h3>
-                      <span style={{ fontSize: '12px', color: '#A3A3A3' }}>Examining the 2 key initial judge failures that drove the few-shot prompt iteration</span>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Disagreement Analysis & Verdict (Who Was Right)</h3>
+                      <span style={{ fontSize: '12px', color: '#475569' }}>Examining the 2 key initial judge failures that drove the few-shot prompt iteration</span>
                     </div>
 
                     {/* Pre-iteration prediction card */}
                     <div style={{ background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px', padding: '16px' }}>
                       <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Pre-Iteration Written Prediction (prediction.txt):</span>
-                      <p style={{ margin: 0, fontStyle: 'italic', fontSize: '13px', color: '#FFFFFF', lineHeight: '1.5' }}>
+                      <p style={{ margin: 0, fontStyle: 'italic', fontSize: '13px', color: '#0F172A', lineHeight: '1.5' }}>
                         "{evalSummary.prediction}"
                       </p>
                       <div style={{ display: 'flex', gap: '16px', marginTop: '10px', fontSize: '11px', color: '#10B981', fontWeight: 'bold' }}>
@@ -2511,17 +2567,17 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       
                       {/* Disagreement 1 */}
-                      <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38BDF8' }}>Disagreement 1: Case CASE-008</span>
                           <span style={{ background: 'rgba(16,185,129,0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
                             Verdict: Human Was Right
                           </span>
                         </div>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#E2E8F0', lineHeight: '1.5' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#1E293B', lineHeight: '1.5' }}>
                           <strong>Contract Issue:</strong> Model substituted a <em>reasonable standard of care</em> with a <em>strict fiduciary standard of utmost good faith</em> and a <em>3-year term</em> with <em>in perpetuity</em>.
                         </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#A3A3A3', lineHeight: '1.5' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
                           <strong>Judge v1 False Pass:</strong> Judge v1 assumed stricter standard was 'safer'.<br />
                           <strong>Legal Reality:</strong> Commercial NDAs do not create fiduciary relationships. Imposing fiduciary duties exposes the party to punitive tort liability and disgorgement.
                         </p>
@@ -2531,17 +2587,17 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       </div>
 
                       {/* Disagreement 2 */}
-                      <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38BDF8' }}>Disagreement 2: Case CASE-002</span>
                           <span style={{ background: 'rgba(16,185,129,0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
                             Verdict: Human Was Right
                           </span>
                         </div>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#E2E8F0', lineHeight: '1.5' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#1E293B', lineHeight: '1.5' }}>
                           <strong>Contract Issue:</strong> Model cited a $5,000,000 liability cap from a superseded draft rather than the executed restatement (12 months trailing fees).
                         </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#A3A3A3', lineHeight: '1.5' }}>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
                           <strong>Judge v1 False Pass:</strong> Judge v1 saw '$5,000,000' in the raw context block and passed it.<br />
                           <strong>Legal Reality:</strong> Executed restatements legally extinguish prior drafts. Advising a client based on superseded text is malpractice.
                         </p>
@@ -2557,15 +2613,15 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                 {/* 6. SUB-TAB 4: BONUS CHALLENGE (SUPERSEDED AMENDMENT TRAP) */}
                 {w6SubTab === 'bonus' && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Bonus Challenge: Confidently, Faithfully Wrong Retrieval Trap</h3>
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Bonus Challenge: Confidently, Faithfully Wrong Retrieval Trap</h3>
                         <span style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
                           RAGAS Failure Mode
                         </span>
                       </div>
-                      <span style={{ fontSize: '12px', color: '#A3A3A3', marginTop: '4px', display: 'block' }}>
+                      <span style={{ fontSize: '12px', color: '#475569', marginTop: '4px', display: 'block' }}>
                         Demonstrating why aggregate faithfulness scores hide critical contract review failures when retriever fetches a superseded amendment
                       </span>
                     </div>
@@ -2574,7 +2630,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '16px', borderRadius: '12px' }}>
                         <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>RAGAS Faithfulness</span>
                         <span style={{ fontSize: '24px', fontWeight: '900', color: '#10B981' }}>{bonusRagasData?.trap_details?.faithfulness_score ?? 0.96}</span>
-                        <span style={{ fontSize: '11px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>Confidently grounded in retrieved text</span>
+                        <span style={{ fontSize: '11px', color: '#475569', display: 'block', marginTop: '2px' }}>Confidently grounded in retrieved text</span>
                       </div>
 
                       <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '16px', borderRadius: '12px' }}>
@@ -2583,14 +2639,14 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         <span style={{ fontSize: '11px', color: '#EF4444', display: 'block', marginTop: '2px' }}>Retrieved chunk was superseded draft!</span>
                       </div>
 
-                      <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '16px', borderRadius: '12px' }}>
+                      <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', padding: '16px', borderRadius: '12px' }}>
                         <span style={{ fontSize: '11px', color: '#38BDF8', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Human / Legal Ground Truth</span>
                         <span style={{ fontSize: '20px', fontWeight: '900', color: '#EF4444' }}>{bonusRagasData?.trap_details?.human_verdict ?? 'FAIL (Malpractice)'}</span>
-                        <span style={{ fontSize: '11px', color: '#A3A3A3', display: 'block', marginTop: '2px' }}>Executed agreement specifies 12mo fees</span>
+                        <span style={{ fontSize: '11px', color: '#475569', display: 'block', marginTop: '2px' }}>Executed agreement specifies 12mo fees</span>
                       </div>
                     </div>
 
-                    <div style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '18px', fontSize: '13px', color: '#E2E8F0', lineHeight: '1.6' }}>
+                    <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '18px', fontSize: '13px', color: '#1E293B', lineHeight: '1.6' }}>
                       <h4 style={{ color: '#F59E0B', marginTop: 0 }}>Why the Overall Average Hides It:</h4>
                       <p style={{ margin: 0 }}>
                         {bonusRagasData?.trap_details?.why_aggregate_hides_it ?? (
@@ -2613,7 +2669,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <span style={{ background: '#EAB308', color: '#000000', fontSize: '11px', fontWeight: '900', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
                         Week 7 · Module 4
                       </span>
-                      <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: '#FFFFFF' }}>
+                      <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: '#0F172A' }}>
                         Agent Loops — and When Not to Use Them
                       </h2>
                     </div>
@@ -2645,7 +2701,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                 </div>
 
                 {/* 2. TRACK SELECTOR & CONFIGURATION BAR */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   
                   {/* Track Pills (A-F) */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
@@ -2688,7 +2744,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         type="text"
                         value={w7Query}
                         onChange={(e) => setW7Query(e.target.value)}
-                        style={{ width: '100%', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '10px 14px', color: '#FFFFFF', fontSize: '13px' }}
+                        style={{ width: '100%', background: '#F8FAFC', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '10px 14px', color: '#0F172A', fontSize: '13px' }}
                       />
                     </div>
 
@@ -2774,7 +2830,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                               {w7RaceData.race_winner}
                             </span>
                           </div>
-                          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#FFFFFF', fontWeight: '500', lineHeight: '1.5' }}>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#0F172A', fontWeight: '500', lineHeight: '1.5' }}>
                             {w7RaceData.ship_recommendation}
                           </p>
                         </div>
@@ -2786,7 +2842,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
                         
                         {/* Speed Metric Card */}
-                        <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px' }}>
+                        <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '18px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                             <Clock size={16} style={{ color: '#38BDF8' }} />
                             <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>SPEED (LATENCY)</span>
@@ -2807,7 +2863,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         </div>
 
                         {/* Cost Metric Card */}
-                        <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px' }}>
+                        <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '18px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                             <DollarSign size={16} style={{ color: '#EAB308' }} />
                             <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>COST ($ / TOKENS)</span>
@@ -2828,7 +2884,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         </div>
 
                         {/* Reliability Metric Card */}
-                        <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '18px' }}>
+                        <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '18px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                             <ShieldCheck size={16} style={{ color: '#10B981' }} />
                             <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>RELIABILITY (%)</span>
@@ -2855,7 +2911,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       
                       {/* Left: Agent Execution Loop */}
-                      <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#A855F7' }}>Hand-Built ReAct Agent Loop</h3>
@@ -2869,7 +2925,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         {w7AgentData ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {w7AgentData.steps.map((st: any) => (
-                              <div key={st.step_index} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px' }}>
+                              <div key={st.step_index} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '12px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                                   <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#A855F7' }}>Step {st.step_index}: {st.action_tool}</span>
                                   <span style={{ fontSize: '10px', color: '#64748B' }}>{st.latency_ms}ms | {st.tokens_used} tk</span>
@@ -2882,7 +2938,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                             ))}
                             <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '12px', borderRadius: '10px' }}>
                               <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#EAB308', display: 'block', marginBottom: '4px' }}>Final Agent Answer:</span>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>{w7AgentData.final_answer}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#0F172A', lineHeight: '1.5' }}>{w7AgentData.final_answer}</p>
                             </div>
                           </div>
                         ) : (
@@ -2891,7 +2947,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       </div>
 
                       {/* Right: Fixed Sequence Workflow */}
-                      <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#10B981' }}>Plain Fixed Sequence Workflow</h3>
@@ -2905,7 +2961,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         {w7RaceData?.fixed_result ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {w7RaceData.fixed_result.steps.map((st: any) => (
-                              <div key={st.step_index} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px', padding: '12px' }}>
+                              <div key={st.step_index} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '12px' }}>
                                 <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', display: 'block', marginBottom: '4px' }}>{st.action}</span>
                                 <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', color: '#38BDF8', fontFamily: 'monospace' }}>
                                   {st.output}
@@ -2914,7 +2970,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                             ))}
                             <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '12px', borderRadius: '10px' }}>
                               <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', display: 'block', marginBottom: '4px' }}>Fixed Workflow Final Output:</span>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>{w7RaceData.fixed_result.final_answer}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#0F172A', lineHeight: '1.5' }}>{w7RaceData.fixed_result.final_answer}</p>
                             </div>
                           </div>
                         ) : (
@@ -2929,16 +2985,16 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                 {/* 5. SUB-TAB 2: AGENT STEP INSPECTOR */}
                 {w7SubTab === 'inspector' && w7AgentData && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
                     <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Hand-Built Agent Step Inspector & Safety Budgets</h3>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Hand-Built Agent Step Inspector & Safety Budgets</h3>
                       <span style={{ fontSize: '12px', color: '#94A3B8' }}>Inspect every turn of the ~50-line ReAct loop, token accumulation, and memory mode</span>
                     </div>
 
                     {/* Budget & Memory Status Banner */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
-                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
                         <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Step Budget Usage</span>
                         <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#EAB308', margin: '4px 0' }}>
                           {w7AgentData.total_steps} / {w7MaxSteps} Max Steps
@@ -2948,7 +3004,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
                         <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Token Budget Usage</span>
                         <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#38BDF8', margin: '4px 0' }}>
                           {w7AgentData.total_tokens} / {w7TokenBudget} Tokens
@@ -2958,7 +3014,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         </div>
                       </div>
 
-                      <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
                         <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Agent Memory Mode</span>
                         <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#A855F7', margin: '4px 0' }}>
                           {w7AgentData.memory_summary}
@@ -2969,11 +3025,11 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                     {/* Step Trajectory Log Cards */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       {w7AgentData.steps.map((st: any) => (
-                        <div key={st.step_index} style={{ background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(168,85,247,0.2)', borderRadius: '12px', padding: '16px' }}>
+                        <div key={st.step_index} style={{ background: '#F8FAFC', border: '1px solid rgba(168,85,247,0.2)', borderRadius: '12px', padding: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ background: '#A855F7', color: '#000000', fontSize: '11px', fontWeight: '900', padding: '2px 6px', borderRadius: '4px' }}>STEP {st.step_index}</span>
-                              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#FFFFFF' }}>Action Tool: {st.action_tool}</span>
+                              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0F172A' }}>Action Tool: {st.action_tool}</span>
                             </div>
                             <span style={{ fontSize: '11px', color: '#94A3B8' }}>{st.timestamp} | {st.latency_ms}ms | {st.tokens_used} tokens</span>
                           </div>
@@ -2998,11 +3054,11 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                 {/* 6. SUB-TAB 3: BENCHMARK RACE SUITE */}
                 {w7SubTab === 'suite' && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Benchmark Race Suite (Tracks A–F)</h3>
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Benchmark Race Suite (Tracks A–F)</h3>
                         <span style={{ fontSize: '12px', color: '#94A3B8' }}>Comprehensive Head-to-Head Comparison Across All 6 Domains</span>
                       </div>
                       <button
@@ -3022,7 +3078,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <span style={{ fontSize: '11px', color: '#EAB308', fontWeight: 'bold', textTransform: 'uppercase' }}>Aggregate Suite Verdict</span>
-                            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#FFFFFF', fontWeight: '500' }}>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#0F172A', fontWeight: '500' }}>
                               {w7SuiteData.aggregate_summary.overall_verdict}
                             </p>
                           </div>
@@ -3042,7 +3098,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                         <div style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#CBD5E1' }}>
                             <thead>
-                              <tr style={{ background: 'rgba(255, 255, 255, 0.05)', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                              <tr style={{ background: '#F8FAFC', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
                                 <th style={{ padding: '10px' }}>Track</th>
                                 <th style={{ padding: '10px' }}>Domain Topic</th>
                                 <th style={{ padding: '10px' }}>Agent Time</th>
@@ -3080,10 +3136,10 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                 {/* 7. SUB-TAB 4: DECISION FRAMEWORK & TRADE-OFF GUIDE */}
                 {w7SubTab === 'decision' && (
-                  <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
                     <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF' }}>Architectural Decision Framework: Agent vs Fixed Sequence</h3>
+                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Architectural Decision Framework: Agent vs Fixed Sequence</h3>
                       <span style={{ fontSize: '12px', color: '#94A3B8' }}>When to use an AI agent loop — and why fixed sequence workflows win for structured business tasks</span>
                     </div>
 
@@ -3112,7 +3168,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                     </div>
 
-                    <div style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.6' }}>
+                    <div style={{ background: '#F8FAFC', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.6' }}>
                       <span style={{ color: '#EAB308', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>💡 Module Takeaway:</span>
                       "Building a ~50-line ReAct loop yourself ensures you understand every turn of the loop without magic frameworks hiding failure modes. Always test a plain fixed sequence first — if the path is predictable, ship the fixed workflow for speed, cost, and reliability."
                     </div>
@@ -3123,7 +3179,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
               </div>
             ) : (
               !activeConvId || isLoadingMessages ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#A3A3A3', gap: '12px', padding: '100px 0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#475569', gap: '12px', padding: '100px 0' }}>
                   <RefreshCw size={24} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
                   <span>Loading conversation history...</span>
                 </div>
@@ -3227,7 +3283,7 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
 
                             {/* User Timestamp */}
                             {isUser && (
-                              <div style={{ textAlign: 'right', fontSize: '10px', color: '#525252', paddingRight: '4px', fontWeight: '500' }}>
+                              <div style={{ textAlign: 'right', fontSize: '10px', color: '#64748B', paddingRight: '4px', fontWeight: '500' }}>
                                 {formatTimestamp(m.timestamp)}
                               </div>
                             )}

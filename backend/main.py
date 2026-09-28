@@ -239,14 +239,28 @@ def submit_feedback(message_id: int, feedback_in: schemas.FeedbackBase, db: Sess
 @app.post("/api/documents", response_model=schemas.DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
     ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in [".txt", ".md", ".json"]:
+    if ext not in [".txt", ".md", ".json", ".pdf"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="Unsupported file type. Only .txt, .md, and .json files are supported."
+            detail="Unsupported file type. Only .txt, .md, .json, and .pdf files are supported."
         )
     try:
         contents = await file.read()
-        text_content = contents.decode("utf-8")
+        if ext == ".pdf":
+            import io
+            from pypdf import PdfReader
+            pdf_stream = io.BytesIO(contents)
+            reader = PdfReader(pdf_stream)
+            extracted_pages = []
+            for i, page in enumerate(reader.pages):
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    extracted_pages.append(f"--- Page {i + 1} ---\n{page_text}")
+            text_content = "\n\n".join(extracted_pages)
+            if not text_content.strip():
+                raise ValueError("Could not extract any text from PDF. The file may be empty or contain only raster images.")
+        else:
+            text_content = contents.decode("utf-8")
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -272,6 +286,11 @@ def delete_document(document_id: str, db: Session = Depends(get_db)):
     doc = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if rag_service.collection:
+        try:
+            rag_service.collection.delete(where={"filename": doc.filename})
+        except Exception as e:
+            print(f"ChromaDB delete error: {e}")
     db.delete(doc)
     db.commit()
     return
@@ -1077,7 +1096,77 @@ def run_agent_eval_benchmark():
     return agent_eval_service.run_mitigation_benchmark()
 
 
+# ------------------------------------------------------------------
+# Week 10: Multi-Agent & A2A Endpoints (Module 5 Deliverable)
+# ------------------------------------------------------------------
 
+from services.multi_agent_service import MultiAgentService
+multi_agent_service = MultiAgentService(ollama_service=ollama_service)
+
+@app.get("/api/multi-agent/squad-info")
+def get_multi_agent_squad_info(track_code: str = "A"):
+    """
+    Returns the Manager + 2 Specialist configuration, goals, tools, and sample queries for the track.
+    """
+    return multi_agent_service.get_squad_info(track_code=track_code)
+
+@app.post("/api/multi-agent/race")
+def race_single_vs_multi_agent(payload: schemas.MultiAgentRaceRequest):
+    """
+    Executes the fair race between Single Agent vs Multi-Agent Squad on the same prompt.
+    Returns Quality, Speed, Tokens, Cost, and Evidence-backed Verdict.
+    """
+    return multi_agent_service.race_single_vs_multi(
+        query=payload.query,
+        track_code=payload.track_code,
+        execution_mode=payload.execution_mode
+    )
+
+@app.post("/api/multi-agent/single-run")
+def run_single_agent_standalone(payload: schemas.MultiAgentRunRequest):
+    """
+    Executes the single monolithic agent standalone.
+    """
+    return multi_agent_service.run_single_agent(
+        query=payload.query,
+        track_code=payload.track_code
+    )
+
+@app.post("/api/multi-agent/squad-run")
+def run_multi_agent_squad_standalone(payload: schemas.MultiAgentRunRequest):
+    """
+    Executes the Manager + 2 Specialists team standalone, detailing the step-by-step handoffs.
+    """
+    return multi_agent_service.run_multi_agent_team(
+        query=payload.query,
+        track_code=payload.track_code,
+        execution_mode=payload.execution_mode
+    )
+
+@app.get("/api/a2a/agent-cards")
+def get_a2a_agent_cards(track_code: Optional[str] = None):
+    """
+    A2A Protocol: AgentCard discovery endpoint returning standard JSON agent metadata cards.
+    """
+    return multi_agent_service.get_all_agent_cards(track_code=track_code)
+
+@app.post("/api/a2a/task/simulate")
+def simulate_a2a_task(payload: schemas.A2ATaskRequest):
+    """
+    A2A Protocol: Simulates task lifecycle (submitted -> working -> completed) between agents.
+    """
+    return multi_agent_service.simulate_a2a_task_lifecycle(
+        caller_agent=payload.caller_agent,
+        target_agent=payload.target_agent,
+        task_description=payload.task_description
+    )
+
+@app.get("/api/multi-agent/frameworks-info")
+def get_multi_agent_frameworks_info():
+    """
+    Returns comparative matrices: MCP vs A2A and CrewAI vs AutoGen.
+    """
+    return multi_agent_service.get_comparison_frameworks_info()
 
 
 if __name__ == "__main__":

@@ -13,7 +13,8 @@ import {
   Plus,
   Trash2,
   Bot,
-  ShieldCheck
+  ShieldCheck,
+  Users
 } from 'lucide-react';
 
 interface Conversation {
@@ -24,8 +25,8 @@ interface Conversation {
 }
 
 interface SidebarProps {
-  currentView: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub';
-  setCurrentView: (view: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub') => void;
+  currentView: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent';
+  setCurrentView: (view: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent') => void;
   conversations: Conversation[];
   activeConvId: string | null;
   onSelectConversation: (id: string) => void;
@@ -46,16 +47,80 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [collapsed, setCollapsed] = useState(false);
 
+  const navItems = [
+    {
+      id: 'chat' as const,
+      label: 'Live Chat',
+      icon: MessageSquare,
+      title: 'Live Customer Support Chat'
+    },
+    {
+      id: 'kb' as const,
+      label: 'Knowledge Base',
+      icon: BookOpen,
+      title: 'RAG Vector Store Knowledge Base'
+    },
+    {
+      id: 'debugger' as const,
+      label: 'RAG Debugger',
+      badge: 'W4',
+      icon: Search,
+      title: 'Week 4 Hybrid Retrieval & Chunk Debugger'
+    },
+    {
+      id: 'error_analysis' as const,
+      label: 'Error Analysis',
+      badge: 'W5',
+      icon: AlertTriangle,
+      title: 'Week 5 Failure Taxonomy & Tracing'
+    },
+    {
+      id: 'judge_eval' as const,
+      label: 'Legal Judge',
+      badge: 'W6',
+      icon: Scale,
+      title: 'Week 6 Legal Contract Clause Judge Validation'
+    },
+    {
+      id: 'agent_loops' as const,
+      label: 'Agent Loops',
+      badge: 'W7',
+      icon: Zap,
+      title: 'Week 7 Agent vs Fixed Workflow Benchmark Race'
+    },
+    {
+      id: 'agent_evals' as const,
+      label: 'Agent Security',
+      badge: 'W8',
+      icon: ShieldAlert,
+      title: 'Week 8 Agent Failure Modes & Security'
+    },
+    {
+      id: 'mcp_hub' as const,
+      label: 'MCP Studio',
+      badge: 'W9',
+      icon: Cpu,
+      title: 'Week 9 MCP & Multi-Agent Studio'
+    },
+    {
+      id: 'multi_agent' as const,
+      label: 'Multi-Agent',
+      badge: 'W10',
+      icon: Users,
+      title: 'Week 10 Multi-Agent Squad & A2A Race'
+    }
+  ];
+
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       {/* Sidebar Header */}
       <div className="sidebar-header">
         <div className="sidebar-brand-wrapper">
           <div className="sidebar-logo">
-            <Bot size={20} className="text-indigo-600" />
+            <Bot size={20} className="brand-logo-icon" />
           </div>
           {!collapsed && (
-            <div>
+            <div className="sidebar-brand-info">
               <h1 className="sidebar-brand-title">AI Master Agent</h1>
               <div className="sidebar-brand-status">
                 <span className="status-dot-pulse"></span>
@@ -76,118 +141,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Modules Section */}
       <div className="sidebar-content">
-        <div className="sidebar-section-title">Core Engine Modules</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
-          
-          {/* 1. Live Chat */}
-          <button
-            className={`nav-item-btn ${currentView === 'chat' ? 'active' : ''}`}
-            onClick={() => setCurrentView('chat')}
-            title="Live Customer Support Chat"
-          >
-            <MessageSquare size={18} />
-            <span className="nav-item-text">Live Chat</span>
-          </button>
-
-          {/* 2. Knowledge Base */}
-          <button
-            className={`nav-item-btn ${currentView === 'kb' ? 'active' : ''}`}
-            onClick={() => setCurrentView('kb')}
-            title="RAG Vector Store Knowledge Base"
-          >
-            <BookOpen size={18} />
-            <span className="nav-item-text">Knowledge Base</span>
-          </button>
-
-          {/* 3. RAG Debugger */}
-          <button
-            className={`nav-item-btn ${currentView === 'debugger' ? 'active' : ''}`}
-            onClick={() => setCurrentView('debugger')}
-            title="Week 4 Hybrid Retrieval & Chunk Debugger"
-          >
-            <Search size={18} />
-            <span className="nav-item-text">RAG Debugger</span>
-            <span className="nav-badge">W4</span>
-          </button>
-
-          {/* 4. Error Analysis */}
-          <button
-            className={`nav-item-btn ${currentView === 'error_analysis' ? 'active' : ''}`}
-            onClick={() => setCurrentView('error_analysis')}
-            title="Week 5 Failure Taxonomy & Tracing"
-          >
-            <AlertTriangle size={18} />
-            <span className="nav-item-text">Error Analysis</span>
-            <span className="nav-badge">W5</span>
-          </button>
-
-          {/* 5. Legal Clause Judge */}
-          <button
-            className={`nav-item-btn ${currentView === 'judge_eval' ? 'active' : ''}`}
-            onClick={() => setCurrentView('judge_eval')}
-            title="Week 6 Legal Contract Clause Judge Validation"
-          >
-            <Scale size={18} />
-            <span className="nav-item-text">Legal Judge</span>
-            <span className="nav-badge">W6</span>
-          </button>
-
-          {/* 6. Agent Loops & Race */}
-          <button
-            className={`nav-item-btn sidebar-nav-tab active-agent ${currentView === 'agent_loops' ? 'active' : ''}`}
-            onClick={() => setCurrentView('agent_loops')}
-            title="Week 7 Agent vs Fixed Workflow Benchmark Race"
-          >
-            <Zap size={18} />
-            <span className="nav-item-text">Agent Loops</span>
-            <span className="nav-badge">W7</span>
-          </button>
-
-          {/* 7. Week 8 Agent Failure Modes & Security */}
-          <button
-            className={`nav-item-btn ${currentView === 'agent_evals' ? 'active' : ''}`}
-            onClick={() => setCurrentView('agent_evals')}
-            title="Week 8 Agent Failure Modes, Trajectory Evals & Prompt Injection Security"
-          >
-            <ShieldAlert size={18} style={{ color: '#EF4444' }} />
-            <span className="nav-item-text">Agent Security</span>
-            <span className="nav-badge" style={{ background: '#EF4444', color: '#FFF' }}>W8</span>
-          </button>
-
-          {/* 8. Week 9 MCP Studio */}
-          <button
-            className={`nav-item-btn sidebar-nav-tab active-mcp ${currentView === 'mcp_hub' ? 'active' : ''}`}
-            onClick={() => setCurrentView('mcp_hub')}
-            title="Week 9 MCP, Multi-Agent & A2A Tool Discovery Studio"
-          >
-            <Cpu size={18} />
-            <span className="nav-item-text">MCP Studio</span>
-            <span className="nav-badge" style={{ background: '#06B6D4', color: '#000' }}>W9</span>
-          </button>
+        {!collapsed && <div className="sidebar-section-title">Core Engine Modules</div>}
+        <div className="nav-group">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentView === item.id;
+            return (
+              <button
+                key={item.id}
+                className={`nav-item-btn ${isActive ? 'active' : ''}`}
+                onClick={() => setCurrentView(item.id)}
+                title={item.title}
+              >
+                <div className="nav-item-left">
+                  <Icon size={18} className="nav-item-icon" />
+                  {!collapsed && <span className="nav-item-text">{item.label}</span>}
+                </div>
+                {!collapsed && item.badge && (
+                  <span className={`nav-badge badge-${item.badge.toLowerCase()}`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Conversations History List (When Chat View is Active or Expanded) */}
+        {/* Conversations History List */}
         {currentView === 'chat' && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <div className="sidebar-section-title" style={{ margin: 0 }}>Conversations</div>
+          <div className="sidebar-conversations-section">
+            <div className="conversations-header">
+              {!collapsed && <span className="sidebar-section-title">Conversations</span>}
               {!collapsed && (
-                <button
-                  onClick={onNewConversation}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-primary)',
-                    borderRadius: '6px',
-                    padding: '3px 8px',
-                    fontSize: '11px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Plus size={12} /> New
+                <button className="new-chat-btn" onClick={onNewConversation} title="Start new conversation">
+                  <Plus size={13} />
+                  <span>New</span>
                 </button>
               )}
             </div>
@@ -198,23 +186,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   key={conv.id}
                   className={`conv-item-btn ${activeConvId === conv.id ? 'active' : ''}`}
                   onClick={() => onSelectConversation(conv.id)}
+                  title={conv.title || 'New Chat'}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                    <MessageSquare size={14} className="text-gray-400" />
-                    <span className="conv-title" style={{ fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {conv.title || 'New Chat'}
-                    </span>
+                  <div className="conv-item-left">
+                    <MessageSquare size={14} className="conv-item-icon" />
+                    {!collapsed && (
+                      <span className="conv-item-text">
+                        {conv.title || 'New Chat Session'}
+                      </span>
+                    )}
                   </div>
                   {!collapsed && (
                     <button
+                      className="conv-item-delete-btn"
                       onClick={(e) => onConfirmDelete(e, conv.id)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: '2px'
-                      }}
                       title="Delete chat"
                     >
                       <Trash2 size={13} />
@@ -223,20 +208,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {/* Sidebar Footer Info */}
-      <div style={{ padding: '14px', borderTop: '1px solid var(--border-subtle)' }}>
-        <div className="sidebar-footer-info" style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <ShieldCheck size={14} className="text-emerald-400" />
-            <span>Agent Evals & Security Active</span>
+      {/* Sidebar Footer */}
+      <div className="sidebar-footer">
+        <div className="sidebar-footer-content">
+          <div className="footer-status-row">
+            <ShieldCheck size={14} className="footer-status-icon" />
+            {!collapsed && <span>Agent Evals Active</span>}
           </div>
-          <div style={{ color: 'var(--text-dark)' }}>Tracks A-F Trajectory Alignment</div>
+          {!collapsed && <div className="footer-subtext">Tracks A-F Trajectory Alignment</div>}
         </div>
       </div>
     </aside>
   );
 };
+

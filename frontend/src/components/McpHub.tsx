@@ -844,7 +844,7 @@ export const McpHub: React.FC = () => {
                   placeholder="e.g. Regional Analytics Server"
                   value={newServerName}
                   onChange={(e) => setNewServerName(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#06090E', border: '1px solid var(--border-subtle)', color: '#FFF' }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A' }}
                 />
               </div>
 
@@ -853,7 +853,7 @@ export const McpHub: React.FC = () => {
                 <select
                   value={newServerTrack}
                   onChange={(e) => setNewServerTrack(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#06090E', border: '1px solid var(--border-subtle)', color: '#FFF' }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A' }}
                 >
                   <option value="A">Track A: Customer Support</option>
                   <option value="B">Track B: Recipes & Food</option>
@@ -871,7 +871,7 @@ export const McpHub: React.FC = () => {
                   placeholder="Exposes custom domain tools"
                   value={newServerDesc}
                   onChange={(e) => setNewServerDesc(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#06090E', border: '1px solid var(--border-subtle)', color: '#FFF' }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A' }}
                 />
               </div>
 
@@ -881,7 +881,7 @@ export const McpHub: React.FC = () => {
                   type="text"
                   value={newToolName}
                   onChange={(e) => setNewToolName(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#06090E', border: '1px solid var(--border-subtle)', color: '#FFF' }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A' }}
                 />
               </div>
 
@@ -891,7 +891,7 @@ export const McpHub: React.FC = () => {
                   type="text"
                   value={newToolDesc}
                   onChange={(e) => setNewToolDesc(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#06090E', border: '1px solid var(--border-subtle)', color: '#FFF' }}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A' }}
                 />
               </div>
 

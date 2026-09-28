@@ -295,5 +295,21 @@ class PromptInjectionTestRequest(BaseModel):
     defense_enabled: bool = False
 
 
+# ------------------------------------------------------------------
+# Week 10: Multi-Agent & A2A Schemas
+# ------------------------------------------------------------------
 
+class MultiAgentRaceRequest(BaseModel):
+    query: str
+    track_code: str = "A"
+    execution_mode: str = "parallel"  # 'parallel' or 'sequential'
 
+class MultiAgentRunRequest(BaseModel):
+    query: str
+    track_code: str = "A"
+    execution_mode: str = "parallel"
+
+class A2ATaskRequest(BaseModel):
+    caller_agent: str
+    target_agent: str
+    task_description: str

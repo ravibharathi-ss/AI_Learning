@@ -395,12 +395,15 @@ class RagService:
         # 4. Reranking Pass
         reranked_candidates = self.rerank_chunks(query_info, rrf_candidates)
 
-        # 5. Format output (with strict relevance threshold check)
+        # 5. Format output (with relevance threshold check and BM25 fallback)
         is_code_match = len(query_info.get("exact_codes", [])) > 0
         final_results = []
         for item in reranked_candidates[:limit]:
-            # Only include chunks with high semantic similarity, high BM25 keyword score, or exact code match
-            if item["semantic_score"] >= 0.45 or (item["bm25_score"] >= 1.5 and item["semantic_score"] >= 0.30) or is_code_match:
+            # Include chunks with high semantic similarity, combined semantic+BM25, pure BM25 match (e.g. offline embedding), or exact code match
+            semantic_ok = item["semantic_score"] >= 0.45
+            hybrid_ok = (item["bm25_score"] >= 1.5 and item["semantic_score"] >= 0.30)
+            bm25_pure_ok = (item["bm25_score"] >= 1.5 and item["semantic_score"] == 0.0)
+            if semantic_ok or hybrid_ok or bm25_pure_ok or is_code_match:
                 chunk: models.DocumentChunk = item["chunk"]
                 final_results.append({
                     "id": chunk.id,

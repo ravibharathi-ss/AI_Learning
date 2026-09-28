@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
@@ -11,3 +11,4 @@ EXPOSE 5173
 
 # Expose to all host interfaces so Docker can forward it
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
