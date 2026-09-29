@@ -3,7 +3,7 @@ import uvicorn
 import json
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 
@@ -285,15 +285,26 @@ def get_documents(db: Session = Depends(get_db)):
 def delete_document(document_id: str, db: Session = Depends(get_db)):
     doc = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        # Idempotent delete: if already removed, return 204 No Content so clients stay cleanly in sync
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    
+    # 1. Explicitly delete document chunks from SQLite
+    try:
+        db.query(models.DocumentChunk).filter(models.DocumentChunk.document_id == document_id).delete()
+    except Exception as e:
+        print(f"DocumentChunk cleanup note: {e}")
+
+    # 2. Delete vectors from ChromaDB if active
     if rag_service.collection:
         try:
             rag_service.collection.delete(where={"filename": doc.filename})
         except Exception as e:
             print(f"ChromaDB delete error: {e}")
+
+    # 3. Delete Document record and commit
     db.delete(doc)
     db.commit()
-    return
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 # 9. Week 4 RAG Inspection & Debugging Endpoints
 @app.post("/api/rag/inspect", response_model=schemas.RagInspectResponse)

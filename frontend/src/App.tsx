@@ -116,6 +116,8 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent'>('chat');
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+  const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
 
   // Week 4 RAG Debugger State
   const [inspectQuery, setInspectQuery] = useState('ERR-4032');
@@ -492,21 +494,28 @@ export default function App() {
   };
 
   const handleDeleteDocument = async (id: string) => {
-    if (!window.confirm("Are you sure you want to remove this document from the Knowledge Base?")) {
-      return;
-    }
+    setDeletingDocId(id);
+    const previousDocs = [...documents];
+    // Optimistic removal for instant, snappy UI feedback
+    setDocuments(prev => prev.filter(d => d.id !== id));
+    
     try {
       const res = await fetch(`${API_BASE}/documents/${id}`, {
         method: 'DELETE'
       });
-      if (res.ok) {
-        fetchDocuments();
-      } else {
-        alert('Failed to delete document');
+      // Refresh documents list to stay perfectly synced with server
+      await fetchDocuments();
+      if (!res.ok && res.status !== 404) {
+        alert('Server reported an issue deleting the document.');
       }
     } catch (e) {
       console.error('Failed to delete document:', e);
-      alert('Failed to delete document');
+      // Revert optimistic removal on network failure
+      setDocuments(previousDocs);
+      alert('Network error: Could not reach backend server to delete document.');
+    } finally {
+      setDeletingDocId(null);
+      setConfirmDeleteDocId(null);
     }
   };
 
@@ -1225,37 +1234,85 @@ export default function App() {
                             <span style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          style={{
-                            marginLeft: 'auto',
-                            padding: '7px 14px',
-                            borderRadius: '8px',
-                            border: '1px solid #FECACA',
-                            color: '#DC2626',
-                            background: '#FEF2F2',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
-                            transition: 'all 0.15s ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#FEE2E2';
-                            e.currentTarget.style.borderColor = '#FCA5A5';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#FEF2F2';
-                            e.currentTarget.style.borderColor = '#FECACA';
-                          }}
-                          title={`Delete ${doc.filename}`}
-                        >
-                          <Trash2 size={14} />
-                          <span>Delete</span>
-                        </button>
+                        {deletingDocId === doc.id ? (
+                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626', fontSize: '12px', fontWeight: '600' }}>
+                            <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                            <span>Deleting...</span>
+                          </div>
+                        ) : confirmDeleteDocId === doc.id ? (
+                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#DC2626' }}>Are you sure?</span>
+                            <button
+                              onClick={() => handleDeleteDocument(doc.id)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid #DC2626',
+                                color: '#FFFFFF',
+                                background: '#DC2626',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                boxShadow: '0 1px 2px rgba(220, 38, 38, 0.2)'
+                              }}
+                              title="Confirm Delete"
+                            >
+                              <Trash2 size={13} />
+                              <span>Yes, Delete</span>
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteDocId(null)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid #CBD5E1',
+                                color: '#475569',
+                                background: '#F8FAFC',
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                cursor: 'pointer'
+                              }}
+                              title="Cancel"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteDocId(doc.id)}
+                            style={{
+                              marginLeft: 'auto',
+                              padding: '7px 14px',
+                              borderRadius: '8px',
+                              border: '1px solid #FECACA',
+                              color: '#DC2626',
+                              background: '#FEF2F2',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
+                              transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#FEE2E2';
+                              e.currentTarget.style.borderColor = '#FCA5A5';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#FEF2F2';
+                              e.currentTarget.style.borderColor = '#FECACA';
+                            }}
+                            title={`Delete ${doc.filename}`}
+                          >
+                            <Trash2 size={14} />
+                            <span>Delete</span>
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
