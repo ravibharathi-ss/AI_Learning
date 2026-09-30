@@ -1,6 +1,15 @@
 version: '3.8'
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -10,8 +19,8 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8000
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=llama3.2
       - OLLAMA_EMBED_MODEL=nomic-embed-text
     env_file:
@@ -21,6 +30,8 @@ services:
     volumes:
       - ./backend:/app
       - /app/.venv
+    depends_on:
+      - ollama
 
   frontend:
     build:
@@ -34,4 +45,7 @@ services:
       - /app/node_modules/.vite
     depends_on:
       - backend
+
+volumes:
+  ollama_data:
 

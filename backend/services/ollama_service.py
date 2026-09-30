@@ -1,7 +1,8 @@
 import os
 import re
+import time
 import asyncio
-from typing import AsyncGenerator, List, Dict
+from typing import AsyncGenerator, List, Dict, Optional, Any
 from openai import OpenAI
 
 class OllamaService:
@@ -142,3 +143,54 @@ class OllamaService:
                 f"```\n\n"
                 f"Then try again. _(Error: {error_msg})_"
             )
+
+    def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Synchronous/blocking completion call for agent reasoning, multi-agent delegations, and evaluations.
+        Returns dict with 'content', 'tokens', and 'latency_ms'.
+        """
+        start = time.time()
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            kwargs = {
+                "model": self.model_name,
+                "messages": messages,
+                "stream": False,
+                "temperature": 0.2,
+                "max_tokens": 350
+            }
+            if not self.use_cloud:
+                kwargs["extra_body"] = {
+                    "options": {
+                        "num_ctx": 2048,
+                        "num_predict": 250,
+                        "temperature": 0.2
+                    },
+                    "keep_alive": "15m"
+                }
+
+            response = self.client.chat.completions.create(**kwargs)
+            content = response.choices[0].message.content or ""
+            latency_ms = int((time.time() - start) * 1000)
+
+            usage = getattr(response, "usage", None)
+            tokens = usage.total_tokens if usage else int(len(content.split()) * 1.3) + len(prompt.split())
+
+            return {
+                "content": content,
+                "tokens": tokens,
+                "latency_ms": latency_ms,
+                "model": self.model_name
+            }
+        except Exception as e:
+            print(f"Ollama generate_response error: {e}")
+            return {
+                "content": "",
+                "tokens": 0,
+                "latency_ms": int((time.time() - start) * 1000),
+                "error": str(e)
+            }

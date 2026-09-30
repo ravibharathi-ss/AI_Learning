@@ -395,6 +395,21 @@ class AgentService:
         if stopped_by_budget:
             return f"[AGENT HALTED BY SAFETY BUDGET]: {stopped_by_budget}. Partial evidence collected across {len(steps)} steps."
 
+        # If live Ollama is available, dynamically synthesize resolution from collected observations
+        if self.ollama_service and steps:
+            obs_text = "\n".join([f"- Step {s.get('step_index')} ({s.get('action_tool')}): {s.get('observation')}" for s in steps])
+            prompt = (
+                f"You are an AI Agent in Track {track_code}.\n"
+                f"Tool Observations collected during your ReAct loop:\n{obs_text}\n\n"
+                f"Synthesize a clear, accurate, and concise final resolution answering the inquiry."
+            )
+            try:
+                resp = self.ollama_service.generate_response(prompt)
+                if resp.get("content"):
+                    return resp["content"]
+            except Exception as e:
+                print(f"Ollama agent synthesis error: {e}")
+
         if track_code == "A":
             return "Based on ticket lookup #90214 and store policy: Your custom headset was delivered 10 days ago. Because custom electronics are strictly Final Sale with a 7-day damage notification window, the return window has expired and your refund amount is $0.00."
         elif track_code == "B":

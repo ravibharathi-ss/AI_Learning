@@ -1,11 +1,14 @@
 import os
 import uvicorn
 import json
+import logging
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
+
+logger = logging.getLogger("chatbot_backend")
 
 import models
 import schemas
@@ -1111,7 +1114,7 @@ def run_agent_eval_benchmark():
 # Week 10: Multi-Agent & A2A Endpoints (Module 5 Deliverable)
 # ------------------------------------------------------------------
 
-from services.multi_agent_service import MultiAgentService
+from services.multi_agent_service import MultiAgentService, MultiAgentError, InputValidationError
 multi_agent_service = MultiAgentService(ollama_service=ollama_service)
 
 @app.get("/api/multi-agent/squad-info")
@@ -1119,7 +1122,11 @@ def get_multi_agent_squad_info(track_code: str = "A"):
     """
     Returns the Manager + 2 Specialist configuration, goals, tools, and sample queries for the track.
     """
-    return multi_agent_service.get_squad_info(track_code=track_code)
+    try:
+        return multi_agent_service.get_squad_info(track_code=track_code)
+    except Exception as e:
+        logger.error(f"Error fetching squad info for track {track_code}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve squad information.")
 
 @app.post("/api/multi-agent/race")
 def race_single_vs_multi_agent(payload: schemas.MultiAgentRaceRequest):
@@ -1127,57 +1134,91 @@ def race_single_vs_multi_agent(payload: schemas.MultiAgentRaceRequest):
     Executes the fair race between Single Agent vs Multi-Agent Squad on the same prompt.
     Returns Quality, Speed, Tokens, Cost, and Evidence-backed Verdict.
     """
-    return multi_agent_service.race_single_vs_multi(
-        query=payload.query,
-        track_code=payload.track_code,
-        execution_mode=payload.execution_mode
-    )
+    try:
+        return multi_agent_service.race_single_vs_multi(
+            query=payload.query,
+            track_code=payload.track_code,
+            execution_mode=payload.execution_mode
+        )
+    except InputValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error executing multi-agent race: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to execute multi-agent race.")
 
 @app.post("/api/multi-agent/single-run")
 def run_single_agent_standalone(payload: schemas.MultiAgentRunRequest):
     """
     Executes the single monolithic agent standalone.
     """
-    return multi_agent_service.run_single_agent(
-        query=payload.query,
-        track_code=payload.track_code
-    )
+    try:
+        return multi_agent_service.run_single_agent(
+            query=payload.query,
+            track_code=payload.track_code
+        )
+    except InputValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error running single agent: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to run single agent.")
 
 @app.post("/api/multi-agent/squad-run")
 def run_multi_agent_squad_standalone(payload: schemas.MultiAgentRunRequest):
     """
     Executes the Manager + 2 Specialists team standalone, detailing the step-by-step handoffs.
     """
-    return multi_agent_service.run_multi_agent_team(
-        query=payload.query,
-        track_code=payload.track_code,
-        execution_mode=payload.execution_mode
-    )
+    try:
+        return multi_agent_service.run_multi_agent_team(
+            query=payload.query,
+            track_code=payload.track_code,
+            execution_mode=payload.execution_mode
+        )
+    except InputValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error running multi-agent squad: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to run multi-agent squad.")
 
 @app.get("/api/a2a/agent-cards")
 def get_a2a_agent_cards(track_code: Optional[str] = None):
     """
     A2A Protocol: AgentCard discovery endpoint returning standard JSON agent metadata cards.
     """
-    return multi_agent_service.get_all_agent_cards(track_code=track_code)
+    try:
+        return multi_agent_service.get_all_agent_cards(track_code=track_code)
+    except Exception as e:
+        logger.error(f"Error fetching AgentCards: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve AgentCards.")
 
 @app.post("/api/a2a/task/simulate")
 def simulate_a2a_task(payload: schemas.A2ATaskRequest):
     """
-    A2A Protocol: Simulates task lifecycle (submitted -> working -> completed) between agents.
+    A2A Protocol: Simulates task lifecycle (submitted -> working -> completed / failed) between agents.
     """
-    return multi_agent_service.simulate_a2a_task_lifecycle(
-        caller_agent=payload.caller_agent,
-        target_agent=payload.target_agent,
-        task_description=payload.task_description
-    )
+    try:
+        return multi_agent_service.simulate_a2a_task_lifecycle(
+            caller_agent=payload.caller_agent,
+            target_agent=payload.target_agent,
+            task_description=payload.task_description,
+            simulate_failure=bool(payload.simulate_failure),
+            failure_reason=payload.failure_reason
+        )
+    except InputValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error simulating A2A task: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to simulate A2A task lifecycle.")
 
 @app.get("/api/multi-agent/frameworks-info")
 def get_multi_agent_frameworks_info():
     """
     Returns comparative matrices: MCP vs A2A and CrewAI vs AutoGen.
     """
-    return multi_agent_service.get_comparison_frameworks_info()
+    try:
+        return multi_agent_service.get_comparison_frameworks_info()
+    except Exception as e:
+        logger.error(f"Error fetching frameworks info: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve frameworks comparison info.")
 
 
 if __name__ == "__main__":

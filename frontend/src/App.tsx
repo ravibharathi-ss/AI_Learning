@@ -117,7 +117,7 @@ export default function App() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
-  const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
+  const [docToDelete, setDocToDelete] = useState<{ id: string; filename: string } | null>(null);
 
   // Week 4 RAG Debugger State
   const [inspectQuery, setInspectQuery] = useState('ERR-4032');
@@ -515,7 +515,7 @@ export default function App() {
       alert('Network error: Could not reach backend server to delete document.');
     } finally {
       setDeletingDocId(null);
-      setConfirmDeleteDocId(null);
+      setDocToDelete(null);
     }
   };
 
@@ -1234,85 +1234,37 @@ export default function App() {
                             <span style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
                           </div>
                         </div>
-                        {deletingDocId === doc.id ? (
-                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626', fontSize: '12px', fontWeight: '600' }}>
-                            <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                            <span>Deleting...</span>
-                          </div>
-                        ) : confirmDeleteDocId === doc.id ? (
-                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#DC2626' }}>Are you sure?</span>
-                            <button
-                              onClick={() => handleDeleteDocument(doc.id)}
-                              style={{
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid #DC2626',
-                                color: '#FFFFFF',
-                                background: '#DC2626',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                boxShadow: '0 1px 2px rgba(220, 38, 38, 0.2)'
-                              }}
-                              title="Confirm Delete"
-                            >
-                              <Trash2 size={13} />
-                              <span>Yes, Delete</span>
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteDocId(null)}
-                              style={{
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid #CBD5E1',
-                                color: '#475569',
-                                background: '#F8FAFC',
-                                fontSize: '12px',
-                                fontWeight: '600',
-                                cursor: 'pointer'
-                              }}
-                              title="Cancel"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setConfirmDeleteDocId(doc.id)}
-                            style={{
-                              marginLeft: 'auto',
-                              padding: '7px 14px',
-                              borderRadius: '8px',
-                              border: '1px solid #FECACA',
-                              color: '#DC2626',
-                              background: '#FEF2F2',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              fontSize: '12px',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
-                              transition: 'all 0.15s ease'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#FEE2E2';
-                              e.currentTarget.style.borderColor = '#FCA5A5';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#FEF2F2';
-                              e.currentTarget.style.borderColor = '#FECACA';
-                            }}
-                            title={`Delete ${doc.filename}`}
-                          >
-                            <Trash2 size={14} />
-                            <span>Delete</span>
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setDocToDelete({ id: doc.id, filename: doc.filename })}
+                          style={{
+                            marginLeft: 'auto',
+                            padding: '7px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid #FECACA',
+                            color: '#DC2626',
+                            background: '#FEF2F2',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#FEE2E2';
+                            e.currentTarget.style.borderColor = '#FCA5A5';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#FEF2F2';
+                            e.currentTarget.style.borderColor = '#FECACA';
+                          }}
+                          title={`Delete ${doc.filename}`}
+                        >
+                          <Trash2 size={14} />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -3458,6 +3410,81 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                 }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. DOCUMENT DELETE CONFIRMATION POPUP MODAL */}
+      {docToDelete && (
+        <div className="modal-overlay" onClick={() => !deletingDocId && setDocToDelete(null)}>
+          <div 
+            className="modal-content animate-scale-in" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ textAlign: 'center', maxWidth: '440px', padding: '28px 24px', background: '#FFFFFF', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', border: '1px solid #E2E8F0' }}
+          >
+            <div style={{
+              width: '52px',
+              height: '52px',
+              borderRadius: '50%',
+              background: '#FEE2E2',
+              border: '1px solid #FECACA',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+              color: '#DC2626'
+            }}>
+              <Trash2 size={24} />
+            </div>
+
+            <h3 className="modal-title" style={{ fontSize: '18px', fontWeight: 'bold', color: '#0F172A', marginBottom: '8px' }}>
+              Delete Document?
+            </h3>
+
+            <p className="modal-desc" style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6', marginBottom: '24px' }}>
+              Are you sure you want to permanently delete <strong style={{ color: '#0F172A', wordBreak: 'break-all' }}>"{docToDelete.filename}"</strong> from the Knowledge Base? All indexed chunks and vector embeddings will be removed.
+            </p>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+              <button 
+                onClick={() => setDocToDelete(null)}
+                disabled={!!deletingDocId}
+                className="btn-3d btn-3d-secondary"
+                style={{ padding: '9px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '600' }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleDeleteDocument(docToDelete.id)}
+                disabled={!!deletingDocId}
+                className="btn-3d btn-3d-primary"
+                style={{ 
+                  padding: '9px 20px', 
+                  borderRadius: '10px', 
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  background: 'linear-gradient(180deg, #EF4444 0%, #DC2626 100%)',
+                  borderColor: '#B91C1C',
+                  color: '#FFFFFF',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 0px #991B1B, 0 8px 15px rgba(239, 68, 68, 0.2)'
+                }}
+              >
+                {deletingDocId ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Yes, Delete</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -300,16 +300,18 @@ class PromptInjectionTestRequest(BaseModel):
 # ------------------------------------------------------------------
 
 class MultiAgentRaceRequest(BaseModel):
-    query: str
-    track_code: str = "A"
-    execution_mode: str = "parallel"  # 'parallel' or 'sequential'
+    query: str = Field(..., min_length=1, max_length=10000, description="Benchmark question or customer inquiry")
+    track_code: str = Field(default="A", max_length=10, description="Domain track code (A-F)")
+    execution_mode: str = Field(default="parallel", pattern="^(parallel|sequential)$", description="Worker execution flow")
 
 class MultiAgentRunRequest(BaseModel):
-    query: str
-    track_code: str = "A"
-    execution_mode: str = "parallel"
+    query: str = Field(..., min_length=1, max_length=10000, description="Query text to execute")
+    track_code: str = Field(default="A", max_length=10, description="Domain track code (A-F)")
+    execution_mode: str = Field(default="parallel", pattern="^(parallel|sequential)$", description="Worker execution flow")
 
 class A2ATaskRequest(BaseModel):
-    caller_agent: str
-    target_agent: str
-    task_description: str
+    caller_agent: str = Field(..., min_length=1, max_length=200, description="Identifier of the caller agent")
+    target_agent: str = Field(..., min_length=1, max_length=200, description="Identifier of the target specialist")
+    task_description: str = Field(..., min_length=1, max_length=5000, description="Description of the delegated task")
+    simulate_failure: Optional[bool] = Field(default=False, description="Whether to simulate an agent failure scenario")
+    failure_reason: Optional[str] = Field(default=None, description="Custom failure reason message for failure testing")
