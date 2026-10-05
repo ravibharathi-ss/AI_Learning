@@ -1,0 +1,93 @@
+{
+  "trace_id": "trace-w11-plant-7f89b2",
+  "timestamp": "2026-10-01T14:23:18.412Z",
+  "day_of_week": "Thursday",
+  "user_id": "alex.vance@legalpartners.com",
+  "user_role": "External Legal Counsel",
+  "client_app": "contract_review_portal_v1",
+  "track_code": "F",
+  "domain": "Legal Contracts",
+  "prompt_version": "v2.1",
+  "prompt_version_tag": "contract_qa_v2.1",
+  "query": "What is the notice period and procedure for terminating our Cloud Master Services Agreement for convenience?",
+  "llm_response": "Under Section 14.2 of the agreement, either party may terminate for convenience upon thirty (30) days prior written notice, provided that Customer remains liable for all prepaid, non-refundable subscription fees.",
+  "cited_clause": "Section 14.2",
+  "actual_ground_truth_clause": "Section 12.3",
+  "actual_ground_truth_notice_days": 60,
+  "citation_error_nature": "Cited Section 14.2 (Limitation of Liability / Sublicensing) instead of Section 12.3 (Termination for Convenience), and stated 30 days instead of 60 days.",
+  "total_latency_ms": 2032,
+  "total_tokens_in": 485,
+  "total_tokens_out": 92,
+  "total_tokens": 577,
+  "total_cost_usd": 0.002835,
+  "retrieved_context_ids": [
+    "doc_master_serv_c11_SECTION_12",
+    "doc_master_serv_c13_SECTION_14"
+  ],
+  "status": "flawed_citation_detected",
+  "spans": [
+    {
+      "span_id": "span-retr-902a",
+      "span_name": "retrieval",
+      "duration_ms": 142,
+      "tokens_in": 28,
+      "tokens_out": 0,
+      "cost_usd": 0.000003,
+      "prompt_version": "v2.1",
+      "retrieved_context_ids": [
+        "doc_master_serv_c11_SECTION_12",
+        "doc_master_serv_c13_SECTION_14"
+      ],
+      "cited_clause": null,
+      "status": "ok",
+      "metadata": {
+        "embedding_model": "nomic-embed-text",
+        "collection": "rag_knowledge_base",
+        "top_k": 2,
+        "similarity_metric": "cosine",
+        "doc_title": "Master Services Agreement (Cloud Infrastructure 2026)"
+      }
+    },
+    {
+      "span_id": "span-gen-811c",
+      "span_name": "generation",
+      "duration_ms": 1890,
+      "tokens_in": 457,
+      "tokens_out": 92,
+      "cost_usd": 0.002832,
+      "prompt_version": "v2.1",
+      "retrieved_context_ids": [
+        "doc_master_serv_c11_SECTION_12",
+        "doc_master_serv_c13_SECTION_14"
+      ],
+      "cited_clause": "Section 14.2",
+      "status": "flawed_citation",
+      "metadata": {
+        "model": "llama3.2",
+        "temperature": 0.2,
+        "max_tokens": 350,
+        "input_tokens_breakdown": {
+          "system_prompt": 120,
+          "context_chunks": 312,
+          "user_query": 25
+        }
+      }
+    },
+    {
+      "span_id": "span-tool-304f",
+      "span_name": "tools",
+      "duration_ms": 0,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "cost_usd": 0.0,
+      "prompt_version": "v2.1",
+      "retrieved_context_ids": [],
+      "cited_clause": null,
+      "status": "not_invoked",
+      "metadata": {
+        "clause_validator_invoked": false,
+        "reason": "Assertion verification pipeline was not enabled in baseline prompt v2.1"
+      }
+    }
+  ]
+}

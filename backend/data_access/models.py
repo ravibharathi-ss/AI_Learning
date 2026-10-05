@@ -60,7 +60,6 @@ class DocumentChunk(Base):
 
     document = relationship("Document", back_populates="chunks")
 
-# Week 5: Trace & Error Analysis Models
 class Trace(Base):
     __tablename__ = "traces"
 
@@ -69,7 +68,7 @@ class Trace(Base):
     message_id = Column(Integer, nullable=True)
     query = Column(Text, nullable=False)
     agent_type = Column(String(50), default="general")
-    track_code = Column(String(10), default="A") # Track A-F (A: Customer Support, B: Recipes, C: HR, D: Insurance, E: Dev Docs, F: Legal)
+    track_code = Column(String(10), default="A")
     system_prompt = Column(Text, nullable=True)
     retrieved_chunks_json = Column(Text, nullable=True) # JSON array of retrieved context chunks with scores
     llm_response = Column(Text, nullable=False)
@@ -94,7 +93,7 @@ class SpanLog(Base):
     tokens_out = Column(Integer, default=0)
     cost_usd = Column(Float, default=0.0)
     prompt_version = Column(String(50), default="v2.1")
-    retrieved_context_ids_json = Column(Text, nullable=True)
+    retrieved_context_ids_json = Column(Text, nullable=True) # JSON array of chunk IDs
     cited_clause = Column(String(100), nullable=True)
     status = Column(String(20), default="ok")
     created_at = Column(DateTime, default=utc_now)
@@ -107,7 +106,7 @@ class TraceAnnotation(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     trace_id = Column(String(50), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False, unique=True)
     is_failure = Column(Boolean, nullable=False, default=True) # True = Failure, False = Pass
-    honest_note = Column(Text, nullable=False) # Open-coding note: 1 honest sentence before categorization
+    honest_note = Column(Text, nullable=False) # Open-coding note
     category_name = Column(String(100), nullable=True) # Problem taxonomy category
     severity = Column(String(20), default="medium") # 'low', 'medium', 'high', 'critical'
     annotated_at = Column(DateTime, default=utc_now)
@@ -121,5 +120,4 @@ class ErrorTaxonomyCategory(Base):
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     is_chosen_target = Column(Boolean, default=False)
-    target_prediction = Column(Text, nullable=True) # Written prediction before fixing
-
+    target_prediction = Column(Text, nullable=True)

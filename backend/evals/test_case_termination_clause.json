@@ -1,0 +1,15 @@
+{
+  "id": "CASE-027",
+  "taxonomy_mode": "Context Ignoring / Misleading Advice",
+  "is_regression": true,
+  "regression_source": "Trace trace-w11-plant-7f89b2 (Thursday Lawyer Termination Citation Complaint)",
+  "contract_title": "Master Services Agreement (Cloud Infrastructure 2026)",
+  "contract_context": "Section 12.2 Termination for Cause / Material Breach: Either Party may terminate this Agreement or any specific SOW immediately upon written notice if the other Party commits a material breach of any provision hereof and fails to cure such material breach within thirty (30) calendar days after receipt of written notice specifying the breach with reasonable detail.\n\nSection 12.3 Termination for Convenience: Customer may terminate this Agreement or any active Service Order for convenience without cause at any time upon providing at least sixty (60) days prior written notice to Provider. In the event Customer exercises termination for convenience, Customer shall pay all earned fees for Services performed through the effective termination date.\n\nSection 14.1 Assignment and Sublicensing: Neither Party may assign or transfer this Agreement, whether by merger, reorganization, or operation of law, without prior written consent.",
+  "query": "What is the notice period and procedure for terminating our Cloud Master Services Agreement for convenience?",
+  "flawed_model_answer_v2_1": "Under Section 14.2 of the agreement, either party may terminate for convenience upon thirty (30) days prior written notice, provided that Customer remains liable for all prepaid, non-refundable subscription fees.",
+  "corrected_model_answer_v2_2": "Under Section 12.3 of the Master Services Agreement, Customer may terminate the Agreement or any active Service Order for convenience without cause at any time upon providing at least sixty (60) days prior written notice to Provider.",
+  "expected_clause": "Section 12.3",
+  "expected_notice_days": 60,
+  "human_verdict": "FAIL",
+  "human_rationale": "Cites Section 14.2 instead of Section 12.3 (Termination for Convenience), and states 30 days instead of the required 60 days notice. Fails both clause citation accuracy and numerical notice correctness."
+}
