@@ -11,45 +11,28 @@ import {
   ThumbsDown, 
   Copy, 
   Check, 
-  CreditCard, 
-  Wrench, 
-  RefreshCw,
-  BookOpen,
-  Upload,
-  FileText,
-  Search,
-  AlertTriangle,
-  ShieldAlert,
-  Target,
-  Award,
-  Sparkles,
-  Layers,
-  Filter,
-  Scale,
-  CheckCircle2,
-  XCircle,
-  ShieldCheck,
+  BookOpen, 
+  Upload, 
+  RefreshCw, 
   FileCheck,
-  TrendingUp,
-  GitCommit,
-  Zap,
-  Clock,
-  DollarSign,
-  Activity,
-  Sliders,
-  Cpu,
-  Users
+  Scale
 } from 'lucide-react';
 
 import { Sidebar } from './components/Sidebar';
-import { McpHub } from './components/McpHub';
-import { AgentEvalHub } from './components/AgentEvalHub';
-import { MultiAgentHub } from './components/MultiAgentHub';
 
 interface Feedback {
   id?: number;
   rating: 'thumbs_up' | 'thumbs_down';
   comment?: string;
+}
+
+interface Citation {
+  document_id: string;
+  document_name: string;
+  chunk_id: number;
+  score: number;
+  snippet: string;
+  clause_reference?: string;
 }
 
 interface Message {
@@ -58,7 +41,9 @@ interface Message {
   sender: 'user' | 'bot';
   content: string;
   timestamp: string;
-  sources?: any;
+  sources?: Citation[];
+  cited_clause?: string;
+  is_grounded?: boolean;
   feedback?: Feedback;
 }
 
@@ -69,516 +54,70 @@ interface Conversation {
   created_at: string;
 }
 
+interface KnowledgeDocument {
+  id: string;
+  filename: string;
+  uploaded_at: string;
+  status?: string;
+  chunks_count?: number;
+}
+
 const API_BASE = 'http://localhost:8000/api';
 
 export default function App() {
-  // App State
+  // Navigation & Core State
+  const [currentView, setCurrentView] = useState<'chat' | 'kb'>('chat');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
-  const [selectedAgent, setSelectedAgent] = useState<'general' | 'technical' | 'billing'>('general');
-  const [backendHealth, setBackendHealth] = useState<{ status: string; mock_mode: boolean } | null>(null);
-  
-  // TTS State
-  const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(null);
-  
-  // STT State (Speech to Text)
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
-  
-  // Copy feedback state
-  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [backendHealth, setBackendHealth] = useState<{ status: string; mode?: string } | null>(null);
 
-  // Custom Delete Confirm Modal state
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [convIdToDelete, setConvIdToDelete] = useState<string | null>(null);
-
-  // Refs
-  const chatScrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isInitializingRef = useRef(false);
-
-  const formatTimestamp = (ts: any) => {
-    if (!ts) return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const str = typeof ts === 'string' ? ts : (ts instanceof Date ? ts.toISOString() : String(ts));
-    const utcStr = str.endsWith('Z') || str.includes('+') ? str : `${str}Z`;
-    try {
-      return new Date(utcStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-  };
-
-  // RAG / Knowledge Base State
-  const [currentView, setCurrentView] = useState<'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent'>('chat');
-  const [documents, setDocuments] = useState<any[]>([]);
+  // Knowledge Base State
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
   const [docToDelete, setDocToDelete] = useState<{ id: string; filename: string } | null>(null);
 
-  // Week 4 RAG Debugger State
-  const [inspectQuery, setInspectQuery] = useState('ERR-4032');
-  const [inspectResult, setInspectResult] = useState<any>(null);
-  const [isInspecting, setIsInspecting] = useState(false);
-  const [evalMetrics, setEvalMetrics] = useState<any>(null);
-  const [isEvaluating, setIsEvaluating] = useState(false);
+  // Audio / Speech State
+  const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
-  // Week 5 Evals & Error Analysis State
-  const [traces, setTraces] = useState<any[]>([]);
-  const [selectedTrace, setSelectedTrace] = useState<any | null>(null);
-  const [taxonomySummary, setTaxonomySummary] = useState<any | null>(null);
-  const [isFetchingTraces, setIsFetchingTraces] = useState(false);
-  const [isSeedingTraces, setIsSeedingTraces] = useState(false);
-  const [eaTrackFilter, setEaTrackFilter] = useState('ALL');
-  const [eaStatusFilter, setEaStatusFilter] = useState('all');
-  const [eaSubTab, setEaSubTab] = useState<'traces' | 'taxonomy' | 'report'>('traces');
+  // UI Utilities
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [convIdToDelete, setConvIdToDelete] = useState<string | null>(null);
 
-  // Week 6 Legal Clause Judge Validation State
-  const [evalSummary, setEvalSummary] = useState<any | null>(null);
-  const [isFetchingEval, setIsFetchingEval] = useState(false);
-  const [isRunningEval, setIsRunningEval] = useState(false);
-  const [w6SubTab, setW6SubTab] = useState<'cases' | 'taxonomy' | 'disagreements' | 'bonus'>('cases');
-  const [w6Filter, setW6Filter] = useState<'all' | 'disagreements' | 'regressions' | 'pass' | 'fail'>('all');
-  const [selectedEvalCase, setSelectedEvalCase] = useState<any | null>(null);
-  const [bonusRagasData, setBonusRagasData] = useState<any | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Week 7 Agent Loops & Fixed Workflow Race State
-  const [w7TrackCode, setW7TrackCode] = useState<'A' | 'B' | 'C' | 'D' | 'E' | 'F'>('A');
-  const [w7Query, setW7Query] = useState('My order #90214 custom headset is damaged and I want a full refund.');
-  const [w7MaxSteps, setW7MaxSteps] = useState(5);
-  const [w7TokenBudget, setW7TokenBudget] = useState(2000);
-  const [_w7MemoryMode, _setW7MemoryMode] = useState<'short_term' | 'summarized'>('short_term');
-  const [w7SubTab, setW7SubTab] = useState<'race' | 'inspector' | 'suite' | 'decision'>('race');
-  const [w7RaceData, setW7RaceData] = useState<any | null>(null);
-  const [w7AgentData, setW7AgentData] = useState<any | null>(null);
-  const [w7SuiteData, setW7SuiteData] = useState<any | null>(null);
-  const [isW7Running, setIsW7Running] = useState(false);
-  const [_tracksMetadata, setTracksMetadata] = useState<any | null>(null);
+  // Auto-scroll on new message
+  useLayoutEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [messages, isGenerating]);
 
-  const defaultQueries: Record<string, string> = {
-    A: 'My order #90214 custom headset is damaged and I want a full refund.',
-    B: 'Can I substitute almond flour 1:1 for all-purpose flour in sourdough bread for 6 people?',
-    C: 'How many days of paid parental leave am I entitled to as a full-time employee with 2 years tenure?',
-    D: 'I have comprehensive auto coverage and need a windshield chip repair. Will my $500 deductible apply?',
-    E: 'I am getting error ERR-4032 when calling the /v2/deployments endpoint in Python.',
-    F: 'What is the governing law and aggregate liability cap for Provider under our Master Services Agreement?'
-  };
+  // Initial Load & Health Check
+  useEffect(() => {
+    checkHealth();
+    fetchConversations();
+    fetchDocuments();
+    setupSpeechRecognition();
+  }, []);
 
-  const handleTrackChange = (code: 'A' | 'B' | 'C' | 'D' | 'E' | 'F') => {
-    setW7TrackCode(code);
-    setW7Query(defaultQueries[code] || '');
-  };
-
-  const fetchTracksMetadata = async () => {
+  const checkHealth = async () => {
     try {
-      const res = await fetch(`${API_BASE}/agent/tracks`);
+      const res = await fetch('http://localhost:8000/health');
       if (res.ok) {
         const data = await res.json();
-        setTracksMetadata(data);
+        setBackendHealth(data);
       }
-    } catch (e) {
-      console.error("Error fetching tracks metadata:", e);
-    }
-  };
-
-  const handleRunW7Race = async (overrideTrack?: string, overrideQuery?: string) => {
-    setIsW7Running(true);
-    try {
-      const tCode = overrideTrack || w7TrackCode;
-      const q = overrideQuery || w7Query;
-      const res = await fetch(`${API_BASE}/agent/race`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, track_code: tCode })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setW7RaceData(data);
-        setW7AgentData(data.agent_result);
-      }
-    } catch (e) {
-      console.error("Error running agent vs fixed race:", e);
-    } finally {
-      setIsW7Running(false);
-    }
-  };
-
-  const handleRunW7Suite = async () => {
-    setIsW7Running(true);
-    try {
-      const res = await fetch(`${API_BASE}/agent/race-suite`);
-      if (res.ok) {
-        const data = await res.json();
-        setW7SuiteData(data);
-      }
-    } catch (e) {
-      console.error("Error running agent race suite:", e);
-    } finally {
-      setIsW7Running(false);
-    }
-  };
-
-  const fetchEvalSummary = async () => {
-    setIsFetchingEval(true);
-    try {
-      const res = await fetch(`${API_BASE}/eval/summary`);
-      if (res.ok) {
-        const data = await res.json();
-        setEvalSummary(data);
-        if (data.cases && data.cases.length > 0 && !selectedEvalCase) {
-          setSelectedEvalCase(data.cases[0]);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching eval summary:", e);
-    } finally {
-      setIsFetchingEval(false);
-    }
-  };
-
-  const handleRunEvalSuite = async () => {
-    setIsRunningEval(true);
-    try {
-      const res = await fetch(`${API_BASE}/eval/run`, { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setEvalSummary(data);
-        if (data.cases && data.cases.length > 0) {
-          setSelectedEvalCase(data.cases[0]);
-        }
-      }
-    } catch (e) {
-      console.error("Error running eval suite:", e);
-    } finally {
-      setIsRunningEval(false);
-    }
-  };
-
-  const fetchBonusRagas = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/eval/bonus-ragas`);
-      if (res.ok) {
-        const data = await res.json();
-        setBonusRagasData(data);
-      }
-    } catch (e) {
-      console.error("Error fetching bonus RAGAS:", e);
-    }
-  };
-
-
-  // Open coding form state
-  const [openCodeNote, setOpenCodeNote] = useState('');
-  const [openCodeCategory, setOpenCodeCategory] = useState('');
-  const [openCodeIsFailure, setOpenCodeIsFailure] = useState(true);
-  const [openCodeSeverity, setOpenCodeSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
-  const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
-
-  // Target fix prediction state
-  const [targetPredictionInput, setTargetPredictionInput] = useState('');
-  const [isSavingPrediction, setIsSavingPrediction] = useState(false);
-  const [copyReportSuccess, setCopyReportSuccess] = useState(false);
-
-  const fetchTraces = async (track = eaTrackFilter, status = eaStatusFilter) => {
-    setIsFetchingTraces(true);
-    try {
-      const url = `${API_BASE}/traces?sample_size=20&track=${track}&status_filter=${status}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setTraces(data);
-        if (data.length > 0 && (!selectedTrace || !data.find((t: any) => t.id === selectedTrace.id))) {
-          loadTraceIntoForm(data[0]);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching traces:", e);
-    } finally {
-      setIsFetchingTraces(false);
-    }
-  };
-
-  const fetchTaxonomySummary = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/error-analysis/taxonomy`);
-      if (res.ok) {
-        const data = await res.json();
-        setTaxonomySummary(data);
-        if (data.chosen_target && data.chosen_target.prediction) {
-          setTargetPredictionInput(data.chosen_target.prediction);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching taxonomy summary:", e);
-    }
-  };
-
-  const loadTraceIntoForm = (trace: any) => {
-    setSelectedTrace(trace);
-    if (trace.annotation) {
-      setOpenCodeIsFailure(trace.annotation.is_failure);
-      setOpenCodeNote(trace.annotation.honest_note || '');
-      setOpenCodeCategory(trace.annotation.category_name || '');
-      setOpenCodeSeverity(trace.annotation.severity || 'medium');
-    } else {
-      setOpenCodeIsFailure(true);
-      setOpenCodeNote('');
-      setOpenCodeCategory('');
-      setOpenCodeSeverity('medium');
-    }
-  };
-
-  const handleSeedTraces = async () => {
-    setIsSeedingTraces(true);
-    try {
-      const res = await fetch(`${API_BASE}/error-analysis/seed`, { method: 'POST' });
-      if (res.ok) {
-        await fetchTraces();
-        await fetchTaxonomySummary();
-      }
-    } catch (e) {
-      console.error("Error seeding traces:", e);
-    } finally {
-      setIsSeedingTraces(false);
-    }
-  };
-
-  const handleSaveAnnotation = async () => {
-    if (!selectedTrace) return;
-    if (openCodeIsFailure && !openCodeNote.trim()) {
-      alert("Please write one honest sentence about what went wrong before saving!");
-      return;
-    }
-    setIsSavingAnnotation(true);
-    try {
-      const res = await fetch(`${API_BASE}/traces/${selectedTrace.id}/annotate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          is_failure: openCodeIsFailure,
-          honest_note: openCodeNote,
-          category_name: openCodeCategory || (openCodeIsFailure ? "Unclassified Failure" : null),
-          severity: openCodeSeverity
-        })
-      });
-      if (res.ok) {
-        await fetchTraces();
-        await fetchTaxonomySummary();
-      }
-    } catch (e) {
-      console.error("Error saving annotation:", e);
-    } finally {
-      setIsSavingAnnotation(false);
-    }
-  };
-
-  const handleDeleteAnnotation = async () => {
-    if (!selectedTrace) return;
-    try {
-      const res = await fetch(`${API_BASE}/traces/${selectedTrace.id}/annotate`, { method: 'DELETE' });
-      if (res.ok) {
-        await fetchTraces();
-        await fetchTaxonomySummary();
-      }
-    } catch (e) {
-      console.error("Error deleting annotation:", e);
-    }
-  };
-
-  const handleSetFixTarget = async (categoryName: string, predictionText?: string) => {
-    setIsSavingPrediction(true);
-    try {
-      const textToSave = predictionText !== undefined ? predictionText : targetPredictionInput;
-      const res = await fetch(`${API_BASE}/error-analysis/target`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category_name: categoryName,
-          prediction: textToSave
-        })
-      });
-      if (res.ok) {
-        await fetchTaxonomySummary();
-      }
-    } catch (e) {
-      console.error("Error setting fix target:", e);
-    } finally {
-      setIsSavingPrediction(false);
-    }
-  };
-
-  const handleInspectQuery = async (queryToTest?: string) => {
-    const query = queryToTest || inspectQuery;
-    if (!query.trim()) return;
-    setIsInspecting(true);
-    try {
-      const res = await fetch(`${API_BASE}/rag/inspect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, agent_type: selectedAgent })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setInspectResult(data);
-      }
-    } catch (e) {
-      console.error("Inspection error:", e);
-    } finally {
-      setIsInspecting(false);
-    }
-  };
-
-  const handleRunEvaluation = async () => {
-    setIsEvaluating(true);
-    try {
-      const testCases = [
-        { query: "ERR-4032", expected_keyword: "ERR-4032" },
-        { query: "What is your refund policy?", expected_keyword: "refund" },
-        { query: "Rocket launch date", expected_keyword: "2028" },
-        { query: "How to reset password", expected_keyword: "password" }
-      ];
-      const res = await fetch(`${API_BASE}/rag/evaluate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test_cases: testCases })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setEvalMetrics(data);
-      }
-    } catch (e) {
-      console.error("Evaluation error:", e);
-    } finally {
-      setIsEvaluating(false);
-    }
-  };
-
-
-
-  const fetchDocuments = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/documents`);
-      if (res.ok) {
-        const data = await res.json();
-        setDocuments(data);
-      }
-    } catch (e) {
-      console.error('Failed to fetch documents:', e);
-    }
-  };
-
-  const handleUploadDocument = async (file: File) => {
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    try {
-      const res = await fetch(`${API_BASE}/documents`, {
-        method: 'POST',
-        body: formData
-      });
-      if (res.ok) {
-        fetchDocuments();
-      } else {
-        const err = await res.json();
-        alert(err.detail || 'Upload failed');
-      }
-    } catch (e) {
-      console.error('Document upload failed:', e);
-      alert('Failed to upload document');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDeleteDocument = async (id: string) => {
-    setDeletingDocId(id);
-    const previousDocs = [...documents];
-    // Optimistic removal for instant, snappy UI feedback
-    setDocuments(prev => prev.filter(d => d.id !== id));
-    
-    try {
-      const res = await fetch(`${API_BASE}/documents/${id}`, {
-        method: 'DELETE'
-      });
-      // Refresh documents list to stay perfectly synced with server
-      await fetchDocuments();
-      if (!res.ok && res.status !== 404) {
-        alert('Server reported an issue deleting the document.');
-      }
-    } catch (e) {
-      console.error('Failed to delete document:', e);
-      // Revert optimistic removal on network failure
-      setDocuments(previousDocs);
-      alert('Network error: Could not reach backend server to delete document.');
-    } finally {
-      setDeletingDocId(null);
-      setDocToDelete(null);
-    }
-  };
-
-  const loadConversation = async (id: string, currentConvs?: Conversation[]) => {
-    try {
-      setIsLoadingMessages(true);
-      setActiveConvId(id);
-      window.speechSynthesis?.cancel();
-      setSpeakingMessageId(null);
-      
-      const res = await fetch(`${API_BASE}/conversations/${id}/messages`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data);
-        
-        const convList = currentConvs || conversations;
-        const conv = convList.find(c => c.id === id);
-        if (conv) {
-          setSelectedAgent((conv.agent_type as any) || 'general');
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load messages:', e);
-    } finally {
-      setIsLoadingMessages(false);
-    }
-  };
-
-  const handleStartChat = async (agent: 'general' | 'technical' | 'billing' = 'general', initialPrompt?: string) => {
-    const titles = {
-      general: 'New Chat Session',
-      technical: 'Tech Helpdesk Session',
-      billing: 'Billing & Invoice Session'
-    };
-
-    try {
-      setIsLoadingMessages(true);
-      const res = await fetch(`${API_BASE}/conversations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: titles[agent],
-          agent_type: agent
-        })
-      });
-
-      if (res.ok) {
-        const newConv = await res.json();
-        setConversations(prev => [newConv, ...prev]);
-        setActiveConvId(newConv.id);
-        setSelectedAgent(agent);
-        setMessages([]);
-
-        if (initialPrompt) {
-          setTimeout(() => {
-            handleSendMessageWithConvId(newConv.id, initialPrompt);
-          }, 100);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to create conversation:', e);
-    } finally {
-      setIsLoadingMessages(false);
+    } catch {
+      setBackendHealth({ status: 'offline' });
     }
   };
 
@@ -588,84 +127,50 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setConversations(data);
-        if (data.length > 0) {
-          await loadConversation(data[0].id, data);
-        } else {
-          if (!isInitializingRef.current) {
-            isInitializingRef.current = true;
-            await handleStartChat('general');
-          }
+        if (data.length > 0 && !activeConvId) {
+          setActiveConvId(data[0].id);
+          loadConversation(data[0].id);
         }
       }
     } catch (e) {
-      console.error('Failed to fetch conversations:', e);
+      console.error('Error fetching conversations:', e);
+    }
+  };
+
+  const loadConversation = async (convId: string) => {
+    setIsLoadingMessages(true);
+    setActiveConvId(convId);
+    try {
+      const res = await fetch(`${API_BASE}/conversations/${convId}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data);
+      }
+    } catch (e) {
+      console.error('Error loading messages:', e);
+    } finally {
       setIsLoadingMessages(false);
     }
   };
 
-  const checkBackendHealth = async () => {
+  const handleStartNewChat = async () => {
     try {
-      const res = await fetch(`${API_BASE}/health`);
+      const res = await fetch(`${API_BASE}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_type: 'legal_specialist' })
+      });
       if (res.ok) {
-        const data = await res.json();
-        setBackendHealth(data);
-      } else {
-        setBackendHealth(null);
+        const newConv = await res.json();
+        setConversations([newConv, ...conversations]);
+        setActiveConvId(newConv.id);
+        setMessages([]);
+        setCurrentView('chat');
       }
     } catch (e) {
-      console.error('Error connecting to backend:', e);
-      setBackendHealth(null);
+      console.error('Error creating conversation:', e);
     }
   };
-
-  // Load initial data
-  useEffect(() => {
-    checkBackendHealth();
-    fetchConversations();
-    fetchDocuments();
-    
-    // Initialize Web Speech Recognition
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = 'en-US';
-      
-      rec.onresult = (event: any) => {
-        const text = event.results[0][0].transcript;
-        setInputText(prev => prev + (prev ? ' ' : '') + text);
-        setIsListening(false);
-      };
-      
-      rec.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
-      };
-      
-      rec.onend = () => {
-        setIsListening(false);
-      };
-      
-      recognitionRef.current = rec;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Synchronous scroll positioning BEFORE paint to prevent top-to-bottom crawling animation
-  useLayoutEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  }, [messages, isLoadingMessages, activeConvId]);
-
-  // Handle textarea autosize
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
-  }, [inputText]);
 
   const handleDeleteConversation = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -673,139 +178,111 @@ export default function App() {
     setShowDeleteConfirm(true);
   };
 
-  const confirmDelete = async () => {
+  const confirmDeleteConversation = async () => {
     if (!convIdToDelete) return;
-    
     try {
       const res = await fetch(`${API_BASE}/conversations/${convIdToDelete}`, { method: 'DELETE' });
       if (res.ok) {
-        const remaining = conversations.filter(c => c.id !== convIdToDelete);
-        setConversations(remaining);
+        const updated = conversations.filter((c) => c.id !== convIdToDelete);
+        setConversations(updated);
         if (activeConvId === convIdToDelete) {
-          if (remaining.length > 0) {
-            loadConversation(remaining[0].id, remaining);
+          if (updated.length > 0) {
+            setActiveConvId(updated[0].id);
+            loadConversation(updated[0].id);
           } else {
             setActiveConvId(null);
             setMessages([]);
-            handleStartChat('general');
           }
         }
       }
     } catch (e) {
-      console.error('Failed to delete conversation:', e);
+      console.error('Error deleting conversation:', e);
     } finally {
       setShowDeleteConfirm(false);
       setConvIdToDelete(null);
     }
   };
 
-  const handleSendMessageWithConvId = async (targetConvId: string, messageContent: string) => {
-    if (!messageContent.trim() || !targetConvId || isGenerating) return;
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || isGenerating) return;
 
-    setInputText('');
-    setIsGenerating(true);
-
-    const tempUserMsgId = Date.now();
-    const tempBotMsgId = Date.now() + 1;
-
-    const localUserMsg: Message = {
-      id: tempUserMsgId,
-      conversation_id: targetConvId,
-      sender: 'user',
-      content: messageContent,
-      timestamp: new Date().toISOString()
-    };
-    
-    const localBotMsg: Message = {
-      id: tempBotMsgId,
-      conversation_id: targetConvId,
-      sender: 'bot',
-      content: '',
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, localUserMsg, localBotMsg]);
-
-    try {
-      const response = await fetch(`${API_BASE}/conversations/${targetConvId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: messageContent })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to register message with server');
-      }
-
-      const { user_message, bot_message } = await response.json();
-
-      setMessages(prev => 
-        prev.map(m => {
-          if (m.id === tempUserMsgId) return user_message;
-          if (m.id === tempBotMsgId) return bot_message;
-          return m;
-        })
-      );
-
-      const streamUrl = `${API_BASE}/conversations/${targetConvId}/messages/${bot_message.id}/stream`;
-      const eventSource = new EventSource(streamUrl);
-
-      eventSource.onmessage = (event) => {
-        if (event.data === '[DONE]') {
-          eventSource.close();
-          setIsGenerating(false);
-          fetchConversations();
+    let targetConvId = activeConvId;
+    if (!targetConvId) {
+      try {
+        const res = await fetch(`${API_BASE}/conversations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent_type: 'legal_specialist' })
+        });
+        if (res.ok) {
+          const newConv = await res.json();
+          targetConvId = newConv.id;
+          setActiveConvId(newConv.id);
+          setConversations([newConv, ...conversations]);
+        } else {
           return;
         }
-
-        const chunk = event.data;
-        if (chunk.startsWith('[SOURCES]')) {
-          try {
-            const sourcesJson = chunk.replace('[SOURCES]', '');
-            const parsedSources = JSON.parse(sourcesJson);
-            setMessages(prev =>
-              prev.map(m => {
-                if (m.id === bot_message.id) {
-                  return { ...m, sources: parsedSources };
-                }
-                return m;
-              })
-            );
-          } catch (e) {
-            console.error('Error parsing sources from stream:', e);
-          }
-        } else {
-          setMessages(prev => 
-            prev.map(m => {
-              if (m.id === bot_message.id) {
-                return { ...m, content: m.content + chunk };
-              }
-              return m;
-            })
-          );
-        }
-      };
-
-      eventSource.onerror = (error) => {
-        console.error('SSE Stream error:', error);
-        eventSource.close();
-        setIsGenerating(false);
-      };
-
-    } catch (e) {
-      console.error('Send message failed:', e);
-      setIsGenerating(false);
-      setMessages(prev => 
-        prev.filter(m => m.id !== tempUserMsgId && m.id !== tempBotMsgId)
-      );
-      alert('Error connecting to chatbot server. Please check that backend is running.');
+      } catch {
+        return;
+      }
     }
-  };
 
-  const handleSendMessage = async (textToSend?: string) => {
-    if (!activeConvId) return;
-    const messageContent = textToSend || inputText;
-    await handleSendMessageWithConvId(activeConvId, messageContent);
+    if (!targetConvId) return;
+
+    const userQuery = inputText.trim();
+    setInputText('');
+
+    const tempUserMsg: Message = {
+      id: Date.now(),
+      conversation_id: targetConvId,
+      sender: 'user',
+      content: userQuery,
+      timestamp: new Date().toISOString()
+    };
+    setMessages((prev) => [...prev, tempUserMsg]);
+    setIsGenerating(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/conversations/${targetConvId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: userQuery, stream: false })
+      });
+
+      if (res.ok) {
+        const botResponse = await res.json();
+        setMessages((prev) => [...prev, botResponse]);
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            conversation_id: targetConvId!,
+            sender: 'bot',
+            content: errJson.detail || 'An error occurred while generating the legal response.',
+            timestamp: new Date().toISOString()
+          }
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          conversation_id: targetConvId!,
+          sender: 'bot',
+          content: 'Network connection error. Please verify backend service status.',
+          timestamp: new Date().toISOString()
+        }
+      ]);
+    } finally {
+      setIsGenerating(false);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }
   };
 
   const handleFeedback = async (messageId: number, rating: 'thumbs_up' | 'thumbs_down') => {
@@ -813,17 +290,11 @@ export default function App() {
       const res = await fetch(`${API_BASE}/messages/${messageId}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating, comment: '' })
+        body: JSON.stringify({ rating })
       });
       if (res.ok) {
-        const updatedFeedback = await res.json();
-        setMessages(prev => 
-          prev.map(m => {
-            if (m.id === messageId) {
-              return { ...m, feedback: updatedFeedback };
-            }
-            return m;
-          })
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, feedback: { rating } } : m))
         );
       }
     } catch (e) {
@@ -831,41 +302,82 @@ export default function App() {
     }
   };
 
-  // Text to Speech
-  const toggleSpeech = (message: Message) => {
-    if (!window.speechSynthesis) return;
-
-    if (speakingMessageId === message.id) {
-      window.speechSynthesis.cancel();
-      setSpeakingMessageId(null);
-    } else {
-      window.speechSynthesis.cancel();
-      
-      const plainText = message.content
-        .replace(/```[\s\S]*?```/g, '[code block omitted]')
-        .replace(/`([^`]+)`/g, '$1')
-        .replace(/[*#_-]/g, '');
-
-      const utterance = new SpeechSynthesisUtterance(plainText);
-      utterance.onend = () => {
-        setSpeakingMessageId(null);
-      };
-      utterance.onerror = () => {
-        setSpeakingMessageId(null);
-      };
-      
-      setSpeakingMessageId(message.id);
-      window.speechSynthesis.speak(utterance);
+  // Document Management Methods
+  const fetchDocuments = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/documents`);
+      if (res.ok) {
+        const data = await res.json();
+        setDocuments(data);
+      }
+    } catch (e) {
+      console.error('Error fetching documents:', e);
     }
   };
 
-  // Speech to Text dictation
+  const handleUploadDocument = async (file: File) => {
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/documents`, {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        await fetchDocuments();
+      } else {
+        const err = await res.json().catch(() => ({ detail: 'Upload error' }));
+        alert(`Failed to upload document: ${err.detail || 'Unknown error'}`);
+      }
+    } catch (e) {
+      console.error('Document upload failed:', e);
+      alert('Network failure uploading document.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    setDeletingDocId(docId);
+    try {
+      const res = await fetch(`${API_BASE}/documents/${docId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      }
+    } catch (e) {
+      console.error('Failed to delete document:', e);
+    } finally {
+      setDeletingDocId(null);
+      setDocToDelete(null);
+    }
+  };
+
+  // Audio / Speech Recognition Methods
+  const setupSpeechRecognition = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputText((prev) => (prev ? prev + ' ' + transcript : transcript));
+        setIsListening(false);
+      };
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
+      recognitionRef.current = recognition;
+    }
+  };
+
   const toggleListening = () => {
     if (!recognitionRef.current) {
-      alert('Speech recognition is not supported in this browser. Try Chrome or Edge.');
+      alert('Speech-to-text is not supported by your browser.');
       return;
     }
-
     if (isListening) {
       recognitionRef.current.stop();
       setIsListening(false);
@@ -875,146 +387,36 @@ export default function App() {
     }
   };
 
-  // Code Copy
-  const copyToClipboard = (text: string, index: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedCodeId(index);
-      setTimeout(() => setCopiedCodeId(null), 2000);
-    });
-  };
-
-  // Custom regex-based Markdown-like Renderer with Copy button
-  const renderMessageContent = (content: string, msgId: number) => {
-    if (!content) return <div className="typing-dots"><span className="typing-dot"></span><span className="typing-dot"></span><span className="typing-dot"></span></div>;
-
-    const parts = content.split(/(```[\s\S]*?```)/g);
-
-    return (
-      <div className="markdown-content">
-        {parts.map((part, i) => {
-          if (part.startsWith('```') && part.endsWith('```')) {
-            const lines = part.slice(3, -3).trim().split('\n');
-            const firstLine = lines[0] || '';
-            const language = ['python', 'javascript', 'html', 'css', 'bash', 'sql'].includes(firstLine.toLowerCase()) ? firstLine : 'code';
-            const codeText = language !== 'code' ? lines.slice(1).join('\n') : lines.join('\n');
-            const blockId = `${msgId}-${i}`;
-
-            return (
-              <div key={i} className="code-block-wrapper animate-scale-in">
-                <div className="code-block-header">
-                  <span>{language.toUpperCase()}</span>
-                  <button 
-                    onClick={() => copyToClipboard(codeText, blockId)}
-                    className="copy-code-btn"
-                  >
-                    {copiedCodeId === blockId ? <Check size={11} style={{ color: '#FFFFFF' }} /> : <Copy size={11} />}
-                    {copiedCodeId === blockId ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <pre>
-                  <code className={`language-${language}`}>{codeText}</code>
-                </pre>
-              </div>
-            );
-          } else {
-            const textLines = part.split('\n');
-            return textLines.map((line, j) => {
-              if (line.startsWith('### ')) {
-                return <h3 key={`${i}-${j}`} style={{ fontSize: '15px', fontWeight: '800', margin: '12px 0 6px 0', color: '#0F172A' }}>{line.slice(4)}</h3>;
-              }
-              if (line.startsWith('## ')) {
-                return <h2 key={`${i}-${j}`} style={{ fontSize: '17px', fontWeight: '800', margin: '16px 0 8px 0', color: '#0F172A' }}>{line.slice(3)}</h2>;
-              }
-              if (line.startsWith('1. ') || line.startsWith('2. ') || line.startsWith('3. ') || line.startsWith('4. ')) {
-                return (
-                  <div key={`${i}-${j}`} className="custom-list-item">
-                    <span style={{ color: '#0F172A', fontWeight: '700' }}>{line.slice(0, 3)}</span>
-                    <span>{line.slice(3)}</span>
-                  </div>
-                );
-              }
-              if (line.startsWith('- ') || line.startsWith('* ')) {
-                return (
-                  <div key={`${i}-${j}`} className="custom-list-item">
-                    <span style={{ color: '#475569', marginRight: '6px' }}>✦</span>
-                    <span>{line.slice(2)}</span>
-                  </div>
-                );
-              }
-              
-              let formattedLine: any = line;
-              if (line.includes('**')) {
-                const boldParts = line.split(/(\*\*[^*]+\*\*)/g);
-                formattedLine = boldParts.map((bp, k) => {
-                  if (bp.startsWith('**') && bp.endsWith('**')) {
-                    return <strong key={k} style={{ color: '#0F172A', fontWeight: '700' }}>{bp.slice(2, -2)}</strong>;
-                  }
-                  return bp;
-                });
-              }
-
-              return <p key={`${i}-${j}`} style={{ margin: '4px 0', color: '#1E293B' }}>{formattedLine}</p>;
-            });
-          }
-        })}
-      </div>
-    );
-  };
-
-  // Agent profiles
-  const agents = {
-    general: {
-      title: 'AI Assistant',
-      desc: 'How can I help you today? Ask questions, search knowledge, or get instant answers.',
-      icon: <Bot style={{ color: '#2563EB' }} size={22} />,
-      classKey: 'general',
-      badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.08)', color: '#FFFFFF', borderColor: 'rgba(255, 255, 255, 0.2)' },
-      suggestions: [
-        'How do I reset my account password?',
-        'What is your refund policy?',
-        'How can I contact support?'
-      ]
-    },
-    technical: {
-      title: 'Tech Helpdesk',
-      desc: 'Expert troubleshooting on configuration errors, code integrations, and API systems.',
-      icon: <Wrench style={{ color: '#CCCCCC' }} size={22} />,
-      classKey: 'technical',
-      badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.05)', color: '#E5E5E5', borderColor: 'rgba(255, 255, 255, 0.15)' },
-      suggestions: [
-        'How to make an async API call in Python?',
-        'I am getting a CORS connection error.',
-        'Show me how to setup Docker container.'
-      ]
-    },
-    billing: {
-      title: 'Billing & Invoice',
-      desc: 'Questions about invoices, package plans, cancellations, or secure subscription updates.',
-      icon: <CreditCard style={{ color: '#888888' }} size={22} />,
-      classKey: 'billing',
-      badgeColor: { backgroundColor: 'rgba(255, 255, 255, 0.03)', color: '#475569', borderColor: 'rgba(255, 255, 255, 0.1)' },
-      suggestions: [
-        'What are the subscription plans available?',
-        'Where can I download my billing invoices?',
-        'How do I update my payment method?'
-      ]
+  const speakText = (id: number, text: string) => {
+    if ('speechSynthesis' in window) {
+      if (speakingMessageId === id) {
+        window.speechSynthesis.cancel();
+        setSpeakingMessageId(null);
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onend = () => setSpeakingMessageId(null);
+      utterance.onerror = () => setSpeakingMessageId(null);
+      setSpeakingMessageId(id);
+      window.speechSynthesis.speak(utterance);
     }
   };
 
-  const currentAgentInfo = agents[selectedAgent] || agents.general;
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
 
   return (
     <div className="app-container">
-      {/* 1. PRODUCTION COLLAPSIBLE SIDE NAVBAR */}
+      {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar
         currentView={currentView}
         setCurrentView={(view) => {
           setCurrentView(view);
           if (view === 'kb') fetchDocuments();
-          else if (view === 'debugger' && !inspectResult) handleInspectQuery("ERR-4032");
-          else if (view === 'error_analysis') { fetchTraces(); fetchTaxonomySummary(); }
-          else if (view === 'judge_eval') { fetchEvalSummary(); fetchBonusRagas(); }
-          else if (view === 'agent_loops') { fetchTracksMetadata(); if (!w7RaceData) handleRunW7Race(); }
         }}
         conversations={conversations}
         activeConvId={activeConvId}
@@ -1022,165 +424,94 @@ export default function App() {
           setCurrentView('chat');
           loadConversation(id);
         }}
-        onNewConversation={() => {
-          setCurrentView('chat');
-          handleStartChat(selectedAgent);
-        }}
+        onNewConversation={handleStartNewChat}
         onConfirmDelete={handleDeleteConversation}
         backendHealth={backendHealth}
       />
 
-      {/* 2. MAIN CHAT AREA */}
+      {/* 2. MAIN APPLICATION CONTENT */}
       <main className="chat-main">
-        
-        {/* Active Header Bar */}
-        {currentView === 'multi_agent' ? (
-          <div className="chat-header">
-            <div className="chat-header-left">
-              <div className="chat-header-avatar" style={{ background: '#EEF2FF', border: '1px solid #C7D2FE', color: '#4F46E5' }}>
-                <Users size={18} />
-              </div>
-              <div>
-                <h3 className="chat-header-title">Week 10 · Multi-Agent & A2A Studio</h3>
-                <span className="chat-header-subtitle">Empirical Race: Manager plus Two Specialists Squad vs Single Monolithic Agent</span>
-              </div>
-            </div>
-          </div>
-        ) : currentView === 'kb' ? (
-          <div className="chat-header">
-            <div className="chat-header-left">
-              <div className="chat-header-avatar">
+        {/* Header Bar */}
+        <div className="chat-header">
+          <div className="chat-header-left">
+            <div className="chat-header-avatar">
+              {currentView === 'kb' ? (
                 <BookOpen size={18} style={{ color: '#2563EB' }} />
-              </div>
-              <div>
-                <h3 className="chat-header-title">Knowledge Base</h3>
-                <span className="chat-header-subtitle">Manage documents for local RAG query indexing</span>
-              </div>
+              ) : (
+                <Scale size={18} style={{ color: '#2563EB' }} />
+              )}
             </div>
-          </div>
-        ) : currentView === 'error_analysis' ? (
-          <div className="chat-header">
-            <div className="chat-header-left">
-              <div className="chat-header-avatar" style={{ background: 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)' }}>
-                <AlertTriangle size={18} style={{ color: '#FFFFFF' }} />
-              </div>
-              <div>
-                <h3 className="chat-header-title">Week 5 · Error Analysis & Evals</h3>
-                <span className="chat-header-subtitle">Read traces by hand, open-code notes, rank problem taxonomy (Frequency × Severity)</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button
-                onClick={handleSeedTraces}
-                disabled={isSeedingTraces}
-                className="btn-3d btn-3d-secondary"
-                style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                title="Seed 20 realistic trace examples across Tracks A-F"
-              >
-                {isSeedingTraces ? <RefreshCw size={12} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={12} />}
-                Seed 20 Sample Traces
-              </button>
-            </div>
-          </div>
-        ) : currentView === 'judge_eval' ? (
-          <div className="chat-header">
-            <div className="chat-header-left">
-              <div className="chat-header-avatar" style={{ background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)' }}>
-                <Scale size={18} style={{ color: '#FFFFFF' }} />
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h3 className="chat-header-title">Week 6 · Legal Clause Judge Validation</h3>
-                  <span className="chat-header-badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-                    Track F: Legal Contracts
-                  </span>
-                </div>
-                <span className="chat-header-subtitle">Deterministic assertions split + Few-shot disagreement calibrated judge</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button
-                onClick={handleRunEvalSuite}
-                disabled={isRunningEval || isFetchingEval}
-                className="btn-3d btn-3d-primary"
-                style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                title="Execute 26-case evaluation suite on demand"
-              >
-                {isRunningEval || isFetchingEval ? <RefreshCw size={12} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={12} />}
-                Run Full Eval Suite (26 Cases)
-              </button>
-            </div>
-          </div>
-        ) : (
-          activeConvId && (
-            <div className="chat-header">
-              <div className="chat-header-left">
-                <div className="chat-header-avatar">
-                  {currentAgentInfo.icon}
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h3 className="chat-header-title">AI Assistant</h3>
-                    <span 
-                      className="chat-header-badge"
-                      style={currentAgentInfo.badgeColor}
-                    >
-                      {currentAgentInfo.title}
-                    </span>
-                  </div>
-                  <span className="chat-header-subtitle">Ask questions and get instant answers</span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button 
-                  onClick={(e) => handleDeleteConversation(e, activeConvId)}
-                  className="btn-3d btn-3d-secondary"
-                  style={{ 
-                    padding: '6px 10px', 
-                    borderRadius: '8px', 
-                    color: '#EF4444', 
-                    borderColor: 'rgba(239, 68, 68, 0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '11px'
-                  }}
-                  title="Delete Conversation"
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 className="chat-header-title">
+                  {currentView === 'kb' ? 'Legal Contracts & Knowledge Base' : 'Legal Intelligence Assistant'}
+                </h3>
+                <span
+                  className="chat-header-badge"
+                  style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}
                 >
-                  <Trash2 size={13} /> Delete
-                </button>
+                  {currentView === 'kb' ? 'Repository Index' : 'Grounded RAG v2.2'}
+                </span>
               </div>
+              <span className="chat-header-subtitle">
+                {currentView === 'kb'
+                  ? 'Ingest and manage legal agreements indexed into vector storage'
+                  : 'Grounded clause analysis and contract Q&A backed by strict citations'}
+              </span>
             </div>
-          )
-        )}
+          </div>
 
-        {/* Message Window / KB Window / MCP Hub / Agent Evals Window / Multi-Agent Studio */}
+          {currentView === 'chat' && activeConvId && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                onClick={(e) => activeConvId && handleDeleteConversation(e, activeConvId)}
+                className="btn-3d btn-3d-secondary"
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  color: '#EF4444',
+                  borderColor: 'rgba(239, 68, 68, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px'
+                }}
+                title="Delete Conversation"
+              >
+                <Trash2 size={13} /> Delete Session
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Content Body */}
         <div className="chat-scroll-container" ref={chatScrollRef}>
-          <div className="chat-content-width" style={{ maxWidth: (currentView === 'mcp_hub' || currentView === 'agent_evals' || currentView === 'multi_agent') ? '100%' : '1000px', width: '100%' }}>
-            {currentView === 'multi_agent' ? (
-              /* WEEK 10 MULTI-AGENT & A2A VIEW */
-              <MultiAgentHub />
-            ) : currentView === 'mcp_hub' ? (
-              /* WEEK 9 MCP HUB VIEW */
-              <McpHub />
-            ) : currentView === 'agent_evals' ? (
-              /* WEEK 8 AGENT EVALS & SECURITY VIEW */
-              <AgentEvalHub />
-            ) : currentView === 'kb' ? (
+          <div className="chat-content-width" style={{ maxWidth: '1000px', width: '100%' }}>
+            {currentView === 'kb' ? (
               /* KNOWLEDGE BASE VIEW */
               <div className="kb-container animate-scale-in" style={{ padding: '24px 0' }}>
-                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', marginBottom: '24px' }}>
-                  <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>Upload Reference Document</h4>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#475569', lineHeight: '1.5' }}>
-                    Select a text (`.txt`), markdown (`.md`), JSON (`.json`), or PDF (`.pdf`) document. Its content will be chunked and indexed into the local SQLite embedding database automatically.
+                <div
+                  style={{
+                    background: '#FFFFFF',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                    border: '1px solid #CBD5E1',
+                    borderRadius: '16px',
+                    padding: '24px',
+                    marginBottom: '24px'
+                  }}
+                >
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: '#0F172A' }}>
+                    Upload Legal Agreement
+                  </h4>
+                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                    Upload standard contracts, agreements, or terms (.pdf, .txt, .md). The document will be
+                    automatically parsed, split across contract section boundaries, and indexed into ChromaDB
+                    vector embeddings for grounded retrieval.
                   </p>
-                  
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <input 
-                      type="file" 
+
+                  <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                    <input
+                      type="file"
                       accept=".txt,.md,.json,.pdf"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
@@ -1191,54 +522,109 @@ export default function App() {
                       style={{ display: 'none' }}
                       id="kb-file-upload-input"
                     />
-                    <label 
+                    <label
                       htmlFor="kb-file-upload-input"
                       className="btn-3d btn-3d-primary"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 22px',
+                        borderRadius: '10px',
+                        fontSize: '13px',
+                        cursor: 'pointer'
+                      }}
                     >
-                      <Upload size={16} /> Select & Upload File
+                      <Upload size={16} /> Select & Ingest File
                     </label>
-                    
+
                     {isUploading && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#475569' }}>
-                        <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                        <span>Indexing file...</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#2563EB' }}>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Parsing and indexing document vectors...</span>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 16px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>Indexed Documents</h4>
-                    <span style={{ fontSize: '11px', fontWeight: '600', padding: '2px 8px', borderRadius: '12px', background: '#E0E7FF', color: '#3730A3' }}>
-                      {documents.length} {documents.length === 1 ? 'file' : 'files'}
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>
+                      Indexed Agreements & Contracts
+                    </h4>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: '#EFF6FF',
+                        color: '#1D4ED8'
+                      }}
+                    >
+                      {documents.length} {documents.length === 1 ? 'document' : 'documents'}
                     </span>
                   </div>
                 </div>
 
                 {documents.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#64748B', fontSize: '13px', background: '#FFFFFF', border: '1px dashed #CBD5E1', borderRadius: '12px' }}>
-                    No documents indexed yet. Upload a document to start using RAG!
+                  <div
+                    style={{
+                      padding: '48px',
+                      textAlign: 'center',
+                      color: '#64748B',
+                      fontSize: '14px',
+                      background: '#FFFFFF',
+                      border: '1px dashed #CBD5E1',
+                      borderRadius: '12px'
+                    }}
+                  >
+                    No agreements indexed yet. Upload a contract to begin querying.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {documents.map((doc) => (
-                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #E2E8F0', borderRadius: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <FileText size={18} style={{ color: '#2563EB' }} />
+                      <div
+                        key={doc.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '16px 20px',
+                          background: '#FFFFFF',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                          <div
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '10px',
+                              background: '#EFF6FF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <FileCheck size={20} style={{ color: '#2563EB' }} />
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A' }}>{doc.filename}</span>
-                            <span style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>Uploaded: {new Date(doc.uploaded_at).toLocaleString()}</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A' }}>
+                              {doc.filename}
+                            </span>
+                            <span style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                              Uploaded: {new Date(doc.uploaded_at).toLocaleString()}
+                            </span>
                           </div>
                         </div>
+
                         <button
                           onClick={() => setDocToDelete({ id: doc.id, filename: doc.filename })}
                           style={{
-                            marginLeft: 'auto',
-                            padding: '7px 14px',
+                            padding: '8px 16px',
                             borderRadius: '8px',
                             border: '1px solid #FECACA',
                             color: '#DC2626',
@@ -1248,17 +634,7 @@ export default function App() {
                             gap: '6px',
                             fontSize: '12px',
                             fontWeight: '600',
-                            cursor: 'pointer',
-                            boxShadow: '0 1px 2px rgba(220, 38, 38, 0.05)',
-                            transition: 'all 0.15s ease'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#FEE2E2';
-                            e.currentTarget.style.borderColor = '#FCA5A5';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#FEF2F2';
-                            e.currentTarget.style.borderColor = '#FECACA';
+                            cursor: 'pointer'
                           }}
                           title={`Delete ${doc.filename}`}
                         >
@@ -1270,2075 +646,237 @@ export default function App() {
                   </div>
                 )}
               </div>
-            ) : currentView === 'debugger' ? (
-              /* WEEK 4 RAG DEBUGGER & INSPECTION VIEW */
-              <div className="debugger-container animate-scale-in" style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
-                {/* 1. QUERY TEST & INSPECTOR CONTROL BAR */}
-                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px' }}>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '15px', fontWeight: 'bold', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Search size={16} /> RAG Retrieval Inspector
-                  </h4>
-                  <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
-                    Test any user prompt or code (e.g. <code>ERR-4032</code>) to inspect exact BM25 keyword ranks, vector similarity, RRF fusion, and failure classification.
-                  </p>
-
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <input 
-                      type="text"
-                      value={inspectQuery}
-                      onChange={(e) => setInspectQuery(e.target.value)}
-                      placeholder="Enter question or code (e.g. ERR-4032, return policy)..."
-                      style={{ flex: 1, padding: '12px 16px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', color: '#0F172A', fontSize: '13px', fontFamily: 'inherit' }}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleInspectQuery(); }}
-                    />
-                    <button
-                      onClick={() => handleInspectQuery()}
-                      disabled={isInspecting}
-                      className="btn-3d btn-3d-primary"
-                      style={{ padding: '12px 20px', borderRadius: '12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      {isInspecting ? <RefreshCw size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Search size={14} />}
-                      Inspect Pipeline
-                    </button>
-                  </div>
-
-                  {/* Preset Test Buttons */}
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600' }}>Quick Test Cases:</span>
-                    {["ERR-4032", "What is your refund policy?", "Rocket launch date"].map((preset) => (
-                      <button
-                        key={preset}
-                        onClick={() => {
-                          setInspectQuery(preset);
-                          handleInspectQuery(preset);
-                        }}
-                        style={{ padding: '4px 10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#1E293B', fontSize: '11px', cursor: 'pointer' }}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 2. RETRIEVAL BENCHMARK EVALUATION METRICS PANEL */}
-                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <h4 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#0F172A' }}>Hit-Rate@3 & MRR Benchmark</h4>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>Measure retrieval accuracy with quantitative numbers before vs after Hybrid Search.</p>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    {evalMetrics && (
-                      <div style={{ display: 'flex', gap: '16px', textTransform: 'uppercase' }}>
-                        <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '6px 14px', borderRadius: '10px', textAlign: 'center' }}>
-                          <span style={{ display: 'block', fontSize: '10px', color: '#38BDF8', fontWeight: 'bold' }}>Hit-Rate@3</span>
-                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{evalMetrics.hit_rate_at_3}%</span>
-                        </div>
-                        <div style={{ background: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '6px 14px', borderRadius: '10px', textAlign: 'center' }}>
-                          <span style={{ display: 'block', fontSize: '10px', color: '#A855F7', fontWeight: 'bold' }}>MRR Score</span>
-                          <span style={{ fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{evalMetrics.mrr}</span>
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      onClick={handleRunEvaluation}
-                      disabled={isEvaluating}
-                      className="btn-3d btn-3d-secondary"
-                      style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      {isEvaluating ? <RefreshCw size={13} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
-                      Run Benchmark
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3. INSPECTION PIPELINE RESULTS */}
-                {inspectResult && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    
-                    {/* A. Failure Diagnostic Classifier Box */}
-                    <div style={{
-                      padding: '16px 20px',
-                      borderRadius: '14px',
-                      border: inspectResult.failure_diagnostic.classification === 'SUCCESS'
-                        ? '1px solid rgba(16, 185, 129, 0.4)'
-                        : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE'
-                        ? '1px solid rgba(239, 68, 68, 0.5)'
-                        : '1px solid rgba(245, 158, 11, 0.5)',
-                      background: inspectResult.failure_diagnostic.classification === 'SUCCESS'
-                        ? 'rgba(16, 185, 129, 0.08)'
-                        : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE'
-                        ? 'rgba(239, 68, 68, 0.1)'
-                        : 'rgba(245, 158, 11, 0.1)'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <AlertTriangle size={18} style={{
-                            color: inspectResult.failure_diagnostic.classification === 'SUCCESS' ? '#10B981' : inspectResult.failure_diagnostic.classification === 'RETRIEVAL_FAILURE' ? '#EF4444' : '#F59E0B'
-                          }} />
-                          <span style={{ fontSize: '14px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#0F172A' }}>
-                            Diagnostic: {inspectResult.failure_diagnostic.classification}
-                          </span>
-                        </div>
-                        <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '12px', background: 'rgba(255,255,255,0.1)', color: '#1E293B', fontWeight: 'bold' }}>
-                          {inspectResult.failure_diagnostic.subtype}
-                        </span>
-                      </div>
-                      <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#1E293B', lineHeight: '1.5' }}>
-                        <strong>Reason:</strong> {inspectResult.failure_diagnostic.reason}
-                      </p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>
-                        <strong>Recommended Remedy:</strong> {inspectResult.failure_diagnostic.remedy}
-                      </p>
-                    </div>
-
-                    {/* B. Step 1: Query Rewriting & Tokens */}
-                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '16px' }}>
-                      <h5 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'bold', color: '#38BDF8' }}>1. Query Rewriting & Keyword Tokens</h5>
-                      <div style={{ fontSize: '12px', color: '#1E293B', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <div><strong>Original Query:</strong> "{inspectResult.query_info.original_query}"</div>
-                        <div><strong>Rewritten Search Query:</strong> "{inspectResult.query_info.rewritten_query}"</div>
-                        <div><strong>Extracted Keyword Tokens:</strong> {inspectResult.query_info.tokens.map((t: string) => <span key={t} style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', margin: '0 3px', fontFamily: 'monospace' }}>{t}</span>)}</div>
-                        {inspectResult.query_info.exact_codes.length > 0 && (
-                          <div><strong>Exact Codes Detected:</strong> {inspectResult.query_info.exact_codes.map((c: string) => <span key={c} style={{ background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38BDF8', padding: '2px 6px', borderRadius: '4px', margin: '0 3px', color: '#38BDF8', fontWeight: 'bold' }}>{c}</span>)}</div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* C. Step 2: Hybrid Search & Reranking Table */}
-                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '16px' }}>
-                      <h5 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: 'bold', color: '#A855F7' }}>2. Hybrid RRF Search & Reranker Breakdown</h5>
-                      
-                      {inspectResult.retrieved_chunks.length === 0 ? (
-                        <div style={{ fontSize: '12px', color: '#EF4444', padding: '12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px' }}>
-                          No document chunks retrieved for this query.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          {inspectResult.retrieved_chunks.map((c: any, index: number) => (
-                            <div key={c.id} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px', fontWeight: 'bold', color: '#0F172A' }}>
-                                <span>Rank #{index + 1} — [{c.filename}]</span>
-                                <span style={{ color: '#10B981' }}>Final Rerank Score: {c.score}</span>
-                              </div>
-                              <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 8px 0', fontFamily: 'monospace', background: '#F8FAFC', padding: '8px', borderRadius: '6px' }}>
-                                "{c.content}"
-                              </p>
-                              <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#94A3B8' }}>
-                                <span>Vector Cosine: <strong>{(c.semantic_score * 100).toFixed(1)}%</strong></span>
-                                <span>BM25 Keyword: <strong>{c.bm25_score.toFixed(2)}</strong></span>
-                                <span>RRF Fusion Score: <strong>{c.rrf_score.toFixed(4)}</strong></span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* D. Step 3: Full Context & LLM Response */}
-                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '16px' }}>
-                      <h5 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: 'bold', color: '#10B981' }}>3. System Context & LLM Generation</h5>
-                      <div style={{ fontSize: '12px', color: '#1E293B' }}>
-                        <div style={{ marginBottom: '10px' }}>
-                          <strong style={{ display: 'block', marginBottom: '4px', color: '#475569' }}>System Prompt Sent to LLM:</strong>
-                          <pre style={{ background: '#F8FAFC', padding: '10px', borderRadius: '8px', fontSize: '11px', color: '#94A3B8', whiteSpace: 'pre-wrap', maxHeight: '120px', overflowY: 'auto' }}>
-                            {inspectResult.system_prompt}
-                          </pre>
-                        </div>
-                        <div>
-                          <strong style={{ display: 'block', marginBottom: '4px', color: '#0F172A' }}>Generated LLM Output:</strong>
-                          <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', padding: '12px', borderRadius: '8px', fontSize: '13px', lineHeight: '1.6', color: '#0F172A' }}>
-                            {inspectResult.llm_response}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-              </div>
-            ) : currentView === 'error_analysis' ? (
-              /* WEEK 5 EVALS & ERROR ANALYSIS VIEW */
-              <div className="error-analysis-container animate-scale-in" style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
-                {/* 1. TOP STATS OVERVIEW HEADER CARDS */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px' }}>
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Sampled Traces Read</span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
-                      {taxonomySummary ? `${taxonomySummary.sample_size} / 20` : '0 / 20'}
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#10B981', display: 'block', marginTop: '2px' }}>Fair sample collected</span>
-                  </div>
-
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Pass vs Failure Rate</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#10B981', background: 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
-                        ✓ {taxonomySummary ? taxonomySummary.passes_count : 0} Pass
-                      </span>
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#EF4444', background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
-                        ✕ {taxonomySummary ? taxonomySummary.failures_count : 0} Fail
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Open-Coded Notes</span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#38BDF8' }}>
-                      {taxonomySummary ? taxonomySummary.annotated_count : 0} Notes
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>Written before grouping</span>
-                  </div>
-
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#475569', fontWeight: '600', display: 'block', marginBottom: '4px' }}>Top Ranked Problem</span>
-                    <span style={{ fontSize: '13px', fontWeight: '800', color: '#F59E0B', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? `#1 ${taxonomySummary.ranked_taxonomy[0].category_name}` : 'None'}
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>
-                      Score (F×S): {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? taxonomySummary.ranked_taxonomy[0].score : 0}
-                    </span>
-                  </div>
-
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: '700', display: 'block', marginBottom: '4px' }}>Target Fix Selected</span>
-                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#0F172A', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {taxonomySummary && taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'No Target Set'}
-                    </span>
-                    <span style={{ fontSize: '10px', color: taxonomySummary && taxonomySummary.chosen_target?.prediction ? '#10B981' : '#F59E0B', display: 'block', marginTop: '2px' }}>
-                      {taxonomySummary && taxonomySummary.chosen_target?.prediction ? '✓ Prediction written' : '⚠️ Awaiting prediction'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 2. SUB-NAVIGATION TABS */}
-                <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', gap: '8px' }}>
-                  <button
-                    onClick={() => setEaSubTab('traces')}
+            ) : (
+              /* LIVE CHAT VIEW */
+              <div className="chat-messages-container" style={{ padding: '20px 0' }}>
+                {messages.length === 0 && !isLoadingMessages && (
+                  <div
                     style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: eaSubTab === 'traces' ? '2px solid #38BDF8' : '2px solid transparent',
-                      color: eaSubTab === 'traces' ? '#38BDF8' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
+                      textAlign: 'center',
+                      padding: '80px 20px',
+                      color: '#64748B',
+                      background: '#FFFFFF',
+                      borderRadius: '16px',
+                      border: '1px solid #E2E8F0'
                     }}
                   >
-                    <Search size={14} /> 1. Hand-Read Traces & Open Code ({traces.length})
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setEaSubTab('taxonomy');
-                      fetchTaxonomySummary();
-                    }}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: eaSubTab === 'taxonomy' ? '2px solid #A855F7' : '2px solid transparent',
-                      color: eaSubTab === 'taxonomy' ? '#A855F7' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Layers size={14} /> 2. Ranked Error Taxonomy (Frequency × Severity)
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setEaSubTab('report');
-                      fetchTaxonomySummary();
-                    }}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: eaSubTab === 'report' ? '2px solid #10B981' : '2px solid transparent',
-                      color: eaSubTab === 'report' ? '#10B981' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Award size={14} /> 3. Deliverable & Mentor Review Report
-                  </button>
-                </div>
-
-                {/* 3. SUB-TAB 1: TRACES & OPEN CODING INTERFACE */}
-                {eaSubTab === 'traces' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    
-                    {/* Track & Status Filters */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '12px 16px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
-                      <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Filter size={12} /> Filter Track:
-                      </span>
-                      {[
-                        { code: 'ALL', label: 'All Tracks' },
-                        { code: 'A', label: 'Track A: Support' },
-                        { code: 'B', label: 'Track B: Recipes' },
-                        { code: 'C', label: 'Track C: HR Policy' },
-                        { code: 'D', label: 'Track D: Insurance' },
-                        { code: 'E', label: 'Track E: Dev Docs' },
-                        { code: 'F', label: 'Track F: Legal' }
-                      ].map((t) => (
-                        <button
-                          key={t.code}
-                          onClick={() => {
-                            setEaTrackFilter(t.code);
-                            fetchTraces(t.code, eaStatusFilter);
-                          }}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '8px',
-                            fontSize: '11px',
-                            border: '1px solid',
-                            cursor: 'pointer',
-                            background: eaTrackFilter === t.code ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.03)',
-                            borderColor: eaTrackFilter === t.code ? '#38BDF8' : 'rgba(255,255,255,0.08)',
-                            color: eaTrackFilter === t.code ? '#38BDF8' : '#A3A3A3',
-                            fontWeight: eaTrackFilter === t.code ? 'bold' : 'normal'
-                          }}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-
-                      <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold' }}>Status:</span>
-                        {['all', 'unannotated', 'failure', 'pass'].map((st) => (
-                          <button
-                            key={st}
-                            onClick={() => {
-                              setEaStatusFilter(st);
-                              fetchTraces(eaTrackFilter, st);
-                            }}
-                            style={{
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              fontSize: '10px',
-                              textTransform: 'capitalize',
-                              cursor: 'pointer',
-                              background: eaStatusFilter === st ? '#FFFFFF' : 'rgba(255,255,255,0.05)',
-                              color: eaStatusFilter === st ? '#000000' : '#A3A3A3',
-                              fontWeight: 'bold',
-                              border: 'none'
-                            }}
-                          >
-                            {st}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Split View: Trace List + Inspector Form */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '16px', alignItems: 'start' }}>
-                      
-                      {/* Left: Scrollable List of 20 Sampled Traces */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '680px', overflowY: 'auto', paddingRight: '4px' }}>
-                        {isFetchingTraces ? (
-                          <div style={{ padding: '40px', textAlign: 'center', color: '#475569', fontSize: '12px' }}>
-                            <RefreshCw size={18} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                            <div style={{ marginTop: '8px' }}>Fetching traces...</div>
-                          </div>
-                        ) : traces.length === 0 ? (
-                          <div style={{ padding: '30px', textAlign: 'center', color: '#475569', fontSize: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
-                            No traces match criteria. Click "Seed 20 Sample Traces" to populate!
-                          </div>
-                        ) : (
-                          traces.map((trace) => {
-                            const isSelected = selectedTrace && selectedTrace.id === trace.id;
-                            const anno = trace.annotation;
-                            return (
-                              <div
-                                key={trace.id}
-                                onClick={() => loadTraceIntoForm(trace)}
-                                style={{
-                                  padding: '12px 14px',
-                                  borderRadius: '12px',
-                                  background: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                                  border: isSelected ? '1px solid #38BDF8' : '1px solid rgba(255, 255, 255, 0.06)',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s ease'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.15)', padding: '2px 6px', borderRadius: '4px' }}>
-                                    Track {trace.track_code}
-                                  </span>
-                                  
-                                  {anno ? (
-                                    anno.is_failure ? (
-                                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#EF4444', background: 'rgba(239,68,68,0.15)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                        ✕ Fail ({anno.severity})
-                                      </span>
-                                    ) : (
-                                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#10B981', background: 'rgba(16,185,129,0.15)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                        ✓ Pass
-                                      </span>
-                                    )
-                                  ) : (
-                                    <span style={{ fontSize: '10px', color: '#475569', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
-                                      Unannotated
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div style={{ fontSize: '12px', fontWeight: '600', color: '#0F172A', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                                  {trace.query}
-                                </div>
-
-                                {anno && anno.honest_note && (
-                                  <div style={{ fontSize: '11px', color: '#475569', fontStyle: 'italic', background: '#F8FAFC', padding: '6px', borderRadius: '6px', marginTop: '6px' }}>
-                                    "{anno.honest_note}"
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      {/* Right: Detailed Complete Trace Inspector & Open Coding Form */}
-                      {selectedTrace ? (
-                        <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                          
-                          {/* Top Bar Details */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '10px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: '800', color: '#0F172A' }}>Trace Details: {selectedTrace.id}</span>
-                              <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#1E293B' }}>Track {selectedTrace.track_code}</span>
-                            </div>
-                            <span style={{ fontSize: '11px', color: '#475569' }}>Latency: {selectedTrace.latency_ms}ms</span>
-                          </div>
-
-                          {/* Section A: User Question */}
-                          <div>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#38BDF8', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>1. User Request / Question</span>
-                            <div style={{ fontSize: '13px', fontWeight: '600', color: '#0F172A', background: '#F8FAFC', padding: '10px 14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
-                              {selectedTrace.query}
-                            </div>
-                          </div>
-
-                          {/* Section B: Retrieved Context Chunks */}
-                          <div>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#A855F7', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>2. What the App Fetched (Retrieved Chunks)</span>
-                            {(() => {
-                              try {
-                                const chunks = selectedTrace.retrieved_chunks_json ? JSON.parse(selectedTrace.retrieved_chunks_json) : [];
-                                if (!chunks || chunks.length === 0) {
-                                  return (
-                                    <div style={{ fontSize: '12px', color: '#EF4444', padding: '10px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px' }}>
-                                      ⚠️ No reference chunks were retrieved for this query.
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                    {chunks.map((c: any, idx: number) => (
-                                      <div key={idx} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '10px', fontSize: '12px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38BDF8', fontWeight: 'bold', marginBottom: '4px' }}>
-                                          <span>File: {c.filename}</span>
-                                          {c.score && <span>Score: {c.score}</span>}
-                                        </div>
-                                        <p style={{ margin: 0, color: '#475569', fontFamily: 'monospace' }}>"{c.content}"</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                );
-                              } catch {
-                                return <div style={{ fontSize: '12px', color: '#475569' }}>Raw Context: {selectedTrace.retrieved_chunks_json}</div>;
-                              }
-                            })()}
-                          </div>
-
-                          {/* Section C: What the App Answered */}
-                          <div>
-                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>3. What the App Answered</span>
-                            <div style={{ fontSize: '12px', color: '#1E293B', background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid #CBD5E1', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
-                              {selectedTrace.llm_response}
-                            </div>
-                          </div>
-
-                          {/* Section D: OPEN CODING & EVALUATION FORM */}
-                          <div style={{ background: '#F8FAFC', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '14px', padding: '16px', marginTop: '6px' }}>
-                            <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 'bold', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <ShieldAlert size={16} style={{ color: '#38BDF8' }} /> Hand-Coding & Error Annotation
-                            </h4>
-                            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#475569' }}>
-                              Requirement: Read the answer honestly and write <strong>one sentence about what went wrong</strong> before assigning problem category.
-                            </p>
-
-                            {/* Pass / Fail Toggle */}
-                            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
-                              <button
-                                type="button"
-                                onClick={() => setOpenCodeIsFailure(false)}
-                                style={{
-                                  flex: 1,
-                                  padding: '8px 12px',
-                                  borderRadius: '8px',
-                                  border: '1px solid',
-                                  cursor: 'pointer',
-                                  background: !openCodeIsFailure ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.03)',
-                                  borderColor: !openCodeIsFailure ? '#10B981' : 'rgba(255,255,255,0.1)',
-                                  color: !openCodeIsFailure ? '#10B981' : '#A3A3A3',
-                                  fontWeight: 'bold',
-                                  fontSize: '12px'
-                                }}
-                              >
-                                ✓ Pass (Answer Accurate)
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setOpenCodeIsFailure(true)}
-                                style={{
-                                  flex: 1,
-                                  padding: '8px 12px',
-                                  borderRadius: '8px',
-                                  border: '1px solid',
-                                  cursor: 'pointer',
-                                  background: openCodeIsFailure ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.03)',
-                                  borderColor: openCodeIsFailure ? '#EF4444' : 'rgba(255,255,255,0.1)',
-                                  color: openCodeIsFailure ? '#EF4444' : '#A3A3A3',
-                                  fontWeight: 'bold',
-                                  fontSize: '12px'
-                                }}
-                              >
-                                ✕ Failure (Has Issue)
-                              </button>
-                            </div>
-
-                            {/* Honest Sentence Note Input */}
-                            <div style={{ marginBottom: '12px' }}>
-                              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
-                                Honest Open-Coding Note (1 Sentence):
-                              </label>
-                              <textarea
-                                value={openCodeNote}
-                                onChange={(e) => setOpenCodeNote(e.target.value)}
-                                placeholder="Describe exactly what failed (e.g. LLM recommended 1:1 almond flour swap ignoring retrieved gluten warning)..."
-                                style={{ width: '100%', height: '60px', padding: '10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#0F172A', fontSize: '12px', fontFamily: 'inherit' }}
-                              />
-                            </div>
-
-                            {openCodeIsFailure && (
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '12px', marginBottom: '14px' }}>
-                                {/* Category Name */}
-                                <div>
-                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
-                                    Problem Category Name:
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={openCodeCategory}
-                                    onChange={(e) => setOpenCodeCategory(e.target.value)}
-                                    placeholder="e.g. Hallucination / Fact Distortion"
-                                    list="category-suggestions"
-                                    style={{ width: '100%', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#0F172A', fontSize: '12px' }}
-                                  />
-                                  <datalist id="category-suggestions">
-                                    <option value="Hallucination / Fact Distortion" />
-                                    <option value="Context Ignoring / Misleading Advice" />
-                                    <option value="Missing Context / Ungrounded Generation" />
-                                    <option value="Incorrect Technical Instructions" />
-                                    <option value="Formatting / JSON Structure Failure" />
-                                  </datalist>
-                                </div>
-
-                                {/* Severity Selector */}
-                                <div>
-                                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
-                                    Severity (S):
-                                  </label>
-                                  <select
-                                    value={openCodeSeverity}
-                                    onChange={(e: any) => setOpenCodeSeverity(e.target.value)}
-                                    style={{ width: '100%', padding: '8px 10px', background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', color: '#0F172A', fontSize: '12px' }}
-                                  >
-                                    <option value="low">Low (1x)</option>
-                                    <option value="medium">Medium (2x)</option>
-                                    <option value="high">High (3x)</option>
-                                    <option value="critical">Critical (4x)</option>
-                                  </select>
-                                </div>
-                              </div>
-                            )}
-
-                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                              {selectedTrace.annotation && (
-                                <button
-                                  type="button"
-                                  onClick={handleDeleteAnnotation}
-                                  className="btn-3d btn-3d-secondary"
-                                  style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px', color: '#EF4444' }}
-                                >
-                                  Clear Annotation
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={handleSaveAnnotation}
-                                disabled={isSavingAnnotation}
-                                className="btn-3d btn-3d-primary"
-                                style={{ padding: '6px 16px', borderRadius: '8px', fontSize: '11px' }}
-                              >
-                                {isSavingAnnotation ? 'Saving...' : 'Save Annotation'}
-                              </button>
-                            </div>
-                          </div>
-
-                        </div>
-                      ) : (
-                        <div style={{ padding: '60px', textAlign: 'center', color: '#475569', background: 'rgba(255,255,255,0.02)', borderRadius: '16px' }}>
-                          Select a trace from the left panel to inspect and open code.
-                        </div>
-                      )}
-
-                    </div>
-
-                  </div>
-                )}
-
-                {/* 4. SUB-TAB 2: RANKED ERROR TAXONOMY (F × S) */}
-                {eaSubTab === 'taxonomy' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px' }}>
-                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>
-                        Ranked Error Taxonomy Matrix (Frequency × Severity)
-                      </h4>
-                      <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#475569' }}>
-                        Calculated ranking: <strong>Error Score = Frequency (F) × Average Severity Weight (S)</strong>. Surface what hurts most first.
-                      </p>
-
-                      {taxonomySummary && taxonomySummary.ranked_taxonomy.length > 0 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          {taxonomySummary.ranked_taxonomy.map((item: any) => {
-                            const isTarget = item.is_chosen_target;
-                            return (
-                              <div
-                                key={item.category_name}
-                                style={{
-                                  background: isTarget ? 'rgba(168, 85, 247, 0.08)' : 'rgba(0,0,0,0.3)',
-                                  border: isTarget ? '1px solid #A855F7' : '1px solid rgba(255,255,255,0.06)',
-                                  borderRadius: '14px',
-                                  padding: '16px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <span style={{
-                                      fontSize: '14px',
-                                      fontWeight: '900',
-                                      color: item.rank === 1 ? '#F59E0B' : '#E2E8F0',
-                                      background: 'rgba(255,255,255,0.1)',
-                                      width: '28px',
-                                      height: '28px',
-                                      borderRadius: '50%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center'
-                                    }}>
-                                      #{item.rank}
-                                    </span>
-                                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#0F172A' }}>{item.category_name}</span>
-                                    {isTarget && (
-                                      <span style={{ fontSize: '11px', background: '#A855F7', color: '#0F172A', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                                        ★ Chosen #1 Fix Target
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                    <div style={{ textAlign: 'right' }}>
-                                      <span style={{ display: 'block', fontSize: '10px', color: '#475569' }}>Freq × Sev Score</span>
-                                      <span style={{ fontSize: '18px', fontWeight: '900', color: '#F59E0B' }}>{item.score}</span>
-                                    </div>
-                                    <button
-                                      onClick={() => handleSetFixTarget(item.category_name)}
-                                      className={`btn-3d ${isTarget ? 'btn-3d-primary' : 'btn-3d-secondary'}`}
-                                      style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '11px' }}
-                                    >
-                                      {isTarget ? 'Selected Target' : 'Set as #1 Target'}
-                                    </button>
-                                  </div>
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94A3B8', marginBottom: '10px' }}>
-                                  <span>Frequency (F): <strong>{item.frequency} trace(s)</strong></span>
-                                  <span>Avg Severity Weight (S): <strong>{item.avg_severity_weight}x</strong></span>
-                                </div>
-
-                                {/* List of Honest Notes under this category */}
-                                <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '10px 12px' }}>
-                                  <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Honest Open-Coding Notes:</span>
-                                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#1E293B', lineHeight: '1.5' }}>
-                                    {item.honest_notes.map((note: string, idx: number) => (
-                                      <li key={idx} style={{ marginBottom: '2px' }}>{note}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#475569', fontSize: '12px' }}>
-                          No annotated failure categories yet. Hand-read traces in Sub-Tab 1 to build the taxonomy!
-                        </div>
-                      )}
-                    </div>
-
-                    {/* TARGET FIX PREDICTION EDITOR */}
-                    {taxonomySummary && taxonomySummary.chosen_target && (
-                      <div style={{ background: 'rgba(168, 85, 247, 0.06)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '16px', padding: '20px' }}>
-                        <h4 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: 'bold', color: '#A855F7', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Target size={16} /> Target Fix Selection & Written Prediction
-                        </h4>
-                        <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#1E293B' }}>
-                          Target Category: <strong>{taxonomySummary.chosen_target.category_name}</strong>
-                        </p>
-
-                        <div style={{ marginBottom: '12px' }}>
-                          <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#1E293B', marginBottom: '4px' }}>
-                            Write Prediction First (What do you expect to happen after fixing this problem?):
-                          </label>
-                          <textarea
-                            value={targetPredictionInput}
-                            onChange={(e) => setTargetPredictionInput(e.target.value)}
-                            placeholder="e.g. By reinforcing strict context grounding in system prompt and lowering temperature, we predict hallucination rate will drop by 75% on factual policy queries..."
-                            style={{ width: '100%', height: '80px', padding: '10px', background: '#F8FAFC', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '8px', color: '#0F172A', fontSize: '12px', fontFamily: 'inherit' }}
-                          />
-                        </div>
-
-                        <button
-                          onClick={() => handleSetFixTarget(taxonomySummary.chosen_target.category_name, targetPredictionInput)}
-                          disabled={isSavingPrediction}
-                          className="btn-3d btn-3d-primary"
-                          style={{ padding: '6px 16px', borderRadius: '8px', fontSize: '11px', background: '#A855F7', borderColor: '#A855F7' }}
-                        >
-                          {isSavingPrediction ? 'Saving...' : 'Save Written Prediction'}
-                        </button>
-                      </div>
-                    )}
-
-                  </div>
-                )}
-
-                {/* 5. SUB-TAB 3: DELIVERABLE & MENTOR REVIEW REPORT */}
-                {eaSubTab === 'report' && taxonomySummary && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px' }}>
-                      <div>
-                        <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Week 5 Deliverable · Mentor Review Summary</h3>
-                        <span style={{ fontSize: '12px', color: '#475569' }}>Evaluated Task Brief: Traces Hand-Read, Open Coding, Ranked Taxonomy, Chosen Target & Written Prediction</span>
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          const markdownReport = `# Week 5 Module 3 Deliverable: Error Analysis & Ranked Taxonomy
-
-## 1. Fair Sample Audit
-- Total Traces Read by Hand: ${taxonomySummary.sample_size} / 20 Traces
-- Pass Count: ${taxonomySummary.passes_count}
-- Failure Count: ${taxonomySummary.failures_count}
-
-## 2. Honest Open-Coding Notes Log
-${traces.filter(t => t.annotation?.is_failure).map(t => `- [Track ${t.track_code}] Query: "${t.query}"\n  Honest Note: "${t.annotation?.honest_note}"\n  Category: ${t.annotation?.category_name} (Severity: ${t.annotation?.severity})`).join('\n\n')}
-
-## 3. Ranked Error Taxonomy Table (Frequency x Severity)
-${taxonomySummary.ranked_taxonomy.map((item: any) => `### Rank #${item.rank}: ${item.category_name}
-- Score: ${item.score} (Frequency: ${item.frequency}, Avg Severity Weight: ${item.avg_severity_weight}x)
-- Honest Notes:
-${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
-
-## 4. Chosen Fix Target & Written Prediction
-- Selected #1 Target: ${taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'None'}
-- Written Prediction: "${taxonomySummary.chosen_target?.prediction || 'N/A'}"
-`;
-                          navigator.clipboard.writeText(markdownReport);
-                          setCopyReportSuccess(true);
-                          setTimeout(() => setCopyReportSuccess(false), 2000);
-                        }}
-                        className="btn-3d btn-3d-primary"
-                        style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        {copyReportSuccess ? <Check size={14} /> : <Copy size={14} />}
-                        {copyReportSuccess ? 'Copied to Clipboard!' : 'Copy Deliverable Markdown'}
-                      </button>
-                    </div>
-
-                    {/* Deliverable Document Preview */}
-                    <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '20px', fontSize: '13px', color: '#1E293B', lineHeight: '1.6' }}>
-                      <h4 style={{ color: '#38BDF8', marginTop: 0 }}>✓ Mentor Check 1: Fair Random Sample Audit</h4>
-                      <p>Read <strong>{taxonomySummary.sample_size} real traces</strong> across Tracks A-F. Identified {taxonomySummary.passes_count} accurate passes and {taxonomySummary.failures_count} real failures.</p>
-
-                      <h4 style={{ color: '#A855F7', marginTop: '16px' }}>✓ Mentor Check 2: Honest Notes Per Failure (Before Categorization)</h4>
-                      <p>Every failure trace was evaluated individually with one honest sentence note describing what went wrong before grouping into categories.</p>
-
-                      <h4 style={{ color: '#F59E0B', marginTop: '16px' }}>✓ Mentor Check 3: Ranked Error Taxonomy Table (Frequency × Severity)</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-                        {taxonomySummary.ranked_taxonomy.map((item: any) => (
-                          <div key={item.category_name} style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: '8px', borderLeft: item.is_chosen_target ? '4px solid #A855F7' : '4px solid #38BDF8' }}>
-                            <div style={{ fontWeight: 'bold', color: '#0F172A' }}>Rank #{item.rank}: {item.category_name} (Score: {item.score})</div>
-                            <div style={{ fontSize: '11px', color: '#475569' }}>Freq: {item.frequency} traces | Sev Weight: {item.avg_severity_weight}x</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <h4 style={{ color: '#10B981', marginTop: '16px' }}>✓ Mentor Check 4: Chosen Target & Written Prediction</h4>
-                      <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '14px', borderRadius: '10px' }}>
-                        <div style={{ fontWeight: 'bold', color: '#10B981' }}>Chosen #1 Target: {taxonomySummary.chosen_target ? taxonomySummary.chosen_target.category_name : 'Not set'}</div>
-                        <p style={{ margin: '6px 0 0 0', fontStyle: 'italic', color: '#0F172A' }}>"{taxonomySummary.chosen_target?.prediction || 'No prediction recorded yet.'}"</p>
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
-            ) : currentView === 'judge_eval' ? (
-              /* WEEK 6 JUDGE EVALUATION & VALIDATION VIEW */
-              <div className="judge-eval-container animate-scale-in" style={{ padding: '20px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
-                {/* 1. TOP STATS OVERVIEW CARDS */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                  
-                  {/* Agreement Before vs After */}
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#10B981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                      <TrendingUp size={13} /> Judge Agreement
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                      <span style={{ fontSize: '22px', fontWeight: '900', color: '#0F172A' }}>
-                        {evalSummary ? `${evalSummary.agreement_after}%` : '100%'}
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold' }}>
-                        (from {evalSummary ? `${evalSummary.agreement_before}%` : '76.9%'})
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>
-                      +{evalSummary ? evalSummary.agreement_delta : '23.1'}% calibration gain
-                    </span>
-                  </div>
-
-                  {/* Assertion vs Judge Split */}
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#38BDF8', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                      <ShieldCheck size={13} /> Criteria Split
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: '800', color: '#38BDF8', background: 'rgba(56,189,248,0.12)', padding: '2px 8px', borderRadius: '6px' }}>
-                        4 Assertions
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#475569' }}>vs</span>
-                      <span style={{ fontSize: '12px', fontWeight: '800', color: '#A855F7', background: 'rgba(168,85,247,0.12)', padding: '2px 8px', borderRadius: '6px' }}>
-                        1 Judge
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '4px' }}>
-                      Deterministic rules stripped from LLM prompt
-                    </span>
-                  </div>
-
-                  {/* Blind Hand-Labels Provenance */}
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#F59E0B', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                      <GitCommit size={13} /> Blind Hand-Labels
-                    </span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
-                      {evalSummary ? evalSummary.total_cases : 26} Cases
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#10B981', display: 'block', marginTop: '2px' }}>
-                      ✓ Committed prior to judge run
-                    </span>
-                  </div>
-
-                  {/* Real Regression Traces */}
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#EC4899', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                      <RefreshCw size={13} /> Regressions
-                    </span>
-                    <span style={{ fontSize: '20px', fontWeight: '800', color: '#0F172A' }}>
-                      {evalSummary ? evalSummary.regression_cases_count : 2} Replayed
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#475569', display: 'block', marginTop: '2px' }}>
-                      Verbatim failed traces from Track F
-                    </span>
-                  </div>
-
-                  {/* Bonus RAGAS Metric */}
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '14px', padding: '14px 16px' }}>
-                    <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                      <AlertTriangle size={13} /> Bonus RAGAS Trap
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: '800', color: '#10B981' }}>0.96 Faith</span>
-                      <span style={{ fontSize: '12px', color: '#475569' }}>/</span>
-                      <span style={{ fontSize: '14px', fontWeight: '800', color: '#EF4444' }}>0.00 Prec</span>
-                    </div>
-                    <span style={{ fontSize: '10px', color: '#EF4444', display: 'block', marginTop: '2px' }}>
-                      Superseded amendment trap exposed
-                    </span>
-                  </div>
-
-                </div>
-
-                {/* 2. SUB-NAVIGATION TABS */}
-                <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', gap: '8px' }}>
-                  <button
-                    onClick={() => setW6SubTab('cases')}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: w6SubTab === 'cases' ? '2px solid #10B981' : '2px solid transparent',
-                      color: w6SubTab === 'cases' ? '#10B981' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <FileCheck size={14} /> 1. Test Dataset & Calibration Inspector ({evalSummary?.cases?.length || 26})
-                  </button>
-
-                  <button
-                    onClick={() => setW6SubTab('taxonomy')}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: w6SubTab === 'taxonomy' ? '2px solid #38BDF8' : '2px solid transparent',
-                      color: w6SubTab === 'taxonomy' ? '#38BDF8' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Layers size={14} /> 2. Mode Pass Rate Table (Week-5 Taxonomy)
-                  </button>
-
-                  <button
-                    onClick={() => setW6SubTab('disagreements')}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: w6SubTab === 'disagreements' ? '2px solid #A855F7' : '2px solid transparent',
-                      color: w6SubTab === 'disagreements' ? '#A855F7' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Scale size={14} /> 3. Disagreement Verdicts & Prediction Report
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setW6SubTab('bonus');
-                      fetchBonusRagas();
-                    }}
-                    style={{
-                      padding: '10px 18px',
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: w6SubTab === 'bonus' ? '2px solid #EF4444' : '2px solid transparent',
-                      color: w6SubTab === 'bonus' ? '#EF4444' : '#A3A3A3',
-                      fontWeight: '700',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Sparkles size={14} /> 4. Bonus Challenge: RAGAS Trap
-                  </button>
-                </div>
-
-                {/* 3. SUB-TAB 1: TEST CASES & COMPARATIVE INSPECTOR */}
-                {w6SubTab === 'cases' && evalSummary && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    
-                    {/* Filters & Filter counts */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '12px 16px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
-                      <span style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Filter size={12} /> View Filter:
-                      </span>
-                      {[
-                        { key: 'all', label: `All Cases (${evalSummary.total_cases})` },
-                        { key: 'disagreements', label: `Judge v1 Disagreements (${evalSummary.total_cases - evalSummary.v1_matches})` },
-                        { key: 'regressions', label: `Regressions (${evalSummary.regression_cases_count})` },
-                        { key: 'pass', label: `Human Pass (14)` },
-                        { key: 'fail', label: `Human Fail (12)` }
-                      ].map(f => (
-                        <button
-                          key={f.key}
-                          onClick={() => setW6Filter(f.key as any)}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            border: w6Filter === f.key ? '1px solid #10B981' : '1px solid rgba(255,255,255,0.1)',
-                            background: w6Filter === f.key ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.03)',
-                            color: w6Filter === f.key ? '#10B981' : '#A3A3A3',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Master-Detail Layout */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 340px) 1fr', gap: '16px' }}>
-                      
-                      {/* Left: Case List */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '650px', overflowY: 'auto', paddingRight: '4px' }}>
-                        {evalSummary.cases
-                          .filter((c: any) => {
-                            if (w6Filter === 'disagreements') return !c.judge_v1.is_agreement;
-                            if (w6Filter === 'regressions') return c.is_regression;
-                            if (w6Filter === 'pass') return c.human_verdict === 'PASS';
-                            if (w6Filter === 'fail') return c.human_verdict === 'FAIL';
-                            return true;
-                          })
-                          .map((c: any) => {
-                            const isSelected = selectedEvalCase?.id === c.id;
-                            const hadV1Disagreement = !c.judge_v1.is_agreement;
-                            return (
-                              <div
-                                key={c.id}
-                                onClick={() => setSelectedEvalCase(c)}
-                                style={{
-                                  padding: '12px',
-                                  borderRadius: '10px',
-                                  background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                                  border: isSelected ? '1px solid #10B981' : '1px solid rgba(255, 255, 255, 0.05)',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '6px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: '11px', fontWeight: '800', color: '#38BDF8' }}>{c.id}</span>
-                                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                    {c.is_regression && (
-                                      <span style={{ fontSize: '9px', fontWeight: '700', color: '#EC4899', background: 'rgba(236,72,153,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
-                                        REGRESSION
-                                      </span>
-                                    )}
-                                    <span style={{ fontSize: '9px', fontWeight: '700', color: c.human_verdict === 'PASS' ? '#10B981' : '#EF4444', background: c.human_verdict === 'PASS' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', padding: '1px 5px', borderRadius: '4px' }}>
-                                      {c.human_verdict}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <span style={{ fontSize: '12px', fontWeight: '600', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {c.query}
-                                </span>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#475569' }}>
-                                  <span>{c.taxonomy_mode}</span>
-                                  {hadV1Disagreement && (
-                                    <span style={{ color: '#F59E0B', fontWeight: 'bold' }}>⚠️ v1 Disagreed</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                      </div>
-
-                      {/* Right: Detailed Comparative Card */}
-                      {selectedEvalCase ? (
-                        <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                          
-                          {/* Case Header */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0F172A' }}>{selectedEvalCase.id}: {selectedEvalCase.contract_title}</h4>
-                                {selectedEvalCase.is_regression && (
-                                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#EC4899', background: 'rgba(236,72,153,0.15)', padding: '2px 6px', borderRadius: '4px' }}>
-                                    {selectedEvalCase.regression_source}
-                                  </span>
-                                )}
-                              </div>
-                              <span style={{ fontSize: '11px', color: '#38BDF8', marginTop: '2px', display: 'block' }}>
-                                Mode: {selectedEvalCase.taxonomy_mode}
-                              </span>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '11px', color: '#475569' }}>Blind Human Label:</span>
-                              <span style={{ fontSize: '12px', fontWeight: '800', color: selectedEvalCase.human_verdict === 'PASS' ? '#10B981' : '#EF4444', background: selectedEvalCase.human_verdict === 'PASS' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', padding: '3px 8px', borderRadius: '6px' }}>
-                                {selectedEvalCase.human_verdict}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Query & Answer */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                              <span style={{ fontSize: '11px', color: '#38BDF8', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Contract Excerpt Context:</span>
-                              <div style={{ fontSize: '12px', color: '#1E293B', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto' }}>
-                                {selectedEvalCase.contract_context}
-                              </div>
-                            </div>
-
-                            <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                              <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>AI Model Answer:</span>
-                              <div style={{ fontSize: '12px', color: '#0F172A', lineHeight: '1.5', maxHeight: '100px', overflowY: 'auto' }}>
-                                {selectedEvalCase.model_answer}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Deterministic Assertions Split */}
-                          <div style={{ background: 'rgba(56, 189, 248, 0.04)', border: '1px solid rgba(56, 189, 248, 0.2)', padding: '14px', borderRadius: '12px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38BDF8', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                              <ShieldCheck size={14} /> Deterministic Assertions Results (Code Assertions, Free & Exact)
-                            </span>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
-                              {Object.entries(selectedEvalCase.assertions.assertions).map(([key, val]: [string, any]) => (
-                                <div key={key} style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: '8px', border: val.passed ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(239,68,68,0.2)' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 'bold', color: val.passed ? '#10B981' : '#EF4444' }}>
-                                    {val.passed ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                                    {key.replace(/_/g, ' ')}
-                                  </div>
-                                  <span style={{ fontSize: '10px', color: '#475569', marginTop: '2px', display: 'block' }}>{val.message}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Judge v1 vs Judge v2 Comparison */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            
-                            {/* Judge v1 */}
-                            <div style={{ background: selectedEvalCase.judge_v1.is_agreement ? 'rgba(16,185,129,0.05)' : 'rgba(245,158,11,0.08)', border: selectedEvalCase.judge_v1.is_agreement ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(245,158,11,0.3)', padding: '12px', borderRadius: '10px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#F59E0B' }}>Judge v1 (Baseline Zero-Shot)</span>
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', color: selectedEvalCase.judge_v1.verdict === 'PASS' ? '#10B981' : '#EF4444' }}>
-                                  Verdict: {selectedEvalCase.judge_v1.verdict}
-                                </span>
-                              </div>
-                              <p style={{ margin: 0, fontSize: '11px', color: '#1E293B', lineHeight: '1.4' }}>
-                                {selectedEvalCase.judge_v1.reasoning}
-                              </p>
-                              {!selectedEvalCase.judge_v1.is_agreement && (
-                                <span style={{ fontSize: '10px', color: '#F59E0B', fontWeight: 'bold', display: 'block', marginTop: '6px' }}>
-                                  ⚠️ Disagreed with Human Hand-Label
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Judge v2 */}
-                            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', padding: '12px', borderRadius: '10px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#10B981' }}>Judge v2 (Few-Shot Calibrated)</span>
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', color: selectedEvalCase.judge_v2.verdict === 'PASS' ? '#10B981' : '#EF4444' }}>
-                                  Verdict: {selectedEvalCase.judge_v2.verdict}
-                                </span>
-                              </div>
-                              <p style={{ margin: 0, fontSize: '11px', color: '#1E293B', lineHeight: '1.4' }}>
-                                {selectedEvalCase.judge_v2.reasoning}
-                              </p>
-                              <span style={{ fontSize: '10px', color: '#10B981', fontWeight: 'bold', display: 'block', marginTop: '6px' }}>
-                                ✓ 100% Agreement with Human Evaluator
-                              </span>
-                            </div>
-
-                          </div>
-
-                          {/* RAGAS Faithfulness & Precision */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 14px', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '11px' }}>
-                            <span style={{ color: '#475569' }}>RAGAS Metrics:</span>
-                            <div style={{ display: 'flex', gap: '16px' }}>
-                              <span>Faithfulness: <strong style={{ color: '#10B981' }}>{selectedEvalCase.ragas.faithfulness}</strong></span>
-                              <span>Context Precision: <strong style={{ color: selectedEvalCase.ragas.context_precision > 0 ? '#10B981' : '#EF4444' }}>{selectedEvalCase.ragas.context_precision}</strong></span>
-                              <span>Answer Relevance: <strong style={{ color: '#38BDF8' }}>{selectedEvalCase.ragas.answer_relevance}</strong></span>
-                            </div>
-                          </div>
-
-                        </div>
-                      ) : (
-                        <div style={{ padding: '40px', textAlign: 'center', color: '#64748B' }}>Select a case to inspect details</div>
-                      )}
-
-                    </div>
-
-                  </div>
-                )}
-
-                {/* 4. SUB-TAB 2: TAXONOMY PASS RATE TABLE */}
-                {w6SubTab === 'taxonomy' && evalSummary && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Taxonomy Mode Pass Rate Breakdown (Week-5 Taxonomy)</h3>
-                      <span style={{ fontSize: '12px', color: '#475569' }}>Evaluating pass rate per failure mode prevents overall averages from hiding category regressions</span>
-                    </div>
-
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#475569' }}>
-                          <th style={{ padding: '12px 10px' }}>Week-5 Taxonomy Mode</th>
-                          <th style={{ padding: '12px 10px' }}>Total Cases</th>
-                          <th style={{ padding: '12px 10px' }}>Pass</th>
-                          <th style={{ padding: '12px 10px' }}>Fail</th>
-                          <th style={{ padding: '12px 10px' }}>Pass Rate</th>
-                          <th style={{ padding: '12px 10px' }}>Regressions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {evalSummary.taxonomy_summary.map((t: any) => (
-                          <tr key={t.mode} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                            <td style={{ padding: '12px 10px', fontWeight: '600', color: '#0F172A' }}>{t.mode}</td>
-                            <td style={{ padding: '12px 10px', color: '#1E293B' }}>{t.total}</td>
-                            <td style={{ padding: '12px 10px', color: '#10B981', fontWeight: 'bold' }}>{t.passed}</td>
-                            <td style={{ padding: '12px 10px', color: '#EF4444', fontWeight: 'bold' }}>{t.failed}</td>
-                            <td style={{ padding: '12px 10px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div style={{ flex: 1, background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
-                                  <div style={{ width: `${t.pass_rate_pct}%`, background: t.pass_rate_pct >= 70 ? '#10B981' : t.pass_rate_pct >= 40 ? '#F59E0B' : '#EF4444', height: '100%' }} />
-                                </div>
-                                <span style={{ fontWeight: 'bold', color: '#0F172A', minWidth: '40px' }}>{t.pass_rate_pct}%</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: '12px 10px' }}>
-                              {t.regression_cases > 0 ? (
-                                <span style={{ background: 'rgba(236,72,153,0.15)', color: '#EC4899', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                                  {t.regression_cases} Trace(s)
-                                </span>
-                              ) : (
-                                <span style={{ color: '#64748B' }}>-</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* 5. SUB-TAB 3: DISAGREEMENTS ANALYSIS & PREDICTION */}
-                {w6SubTab === 'disagreements' && evalSummary && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Disagreement Analysis & Verdict (Who Was Right)</h3>
-                      <span style={{ fontSize: '12px', color: '#475569' }}>Examining the 2 key initial judge failures that drove the few-shot prompt iteration</span>
-                    </div>
-
-                    {/* Pre-iteration prediction card */}
-                    <div style={{ background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px', padding: '16px' }}>
-                      <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Pre-Iteration Written Prediction (prediction.txt):</span>
-                      <p style={{ margin: 0, fontStyle: 'italic', fontSize: '13px', color: '#0F172A', lineHeight: '1.5' }}>
-                        "{evalSummary.prediction}"
-                      </p>
-                      <div style={{ display: 'flex', gap: '16px', marginTop: '10px', fontSize: '11px', color: '#10B981', fontWeight: 'bold' }}>
-                        <span>✓ Predicted Agreement &gt; 92% (Achieved: {evalSummary.agreement_after}%)</span>
-                        <span>✓ Eliminated False Passes on Standard of Care & Superseded Drafts</span>
-                      </div>
-                    </div>
-
-                    {/* The 2 Disagreements Detailed */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      
-                      {/* Disagreement 1 */}
-                      <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38BDF8' }}>Disagreement 1: Case CASE-008</span>
-                          <span style={{ background: 'rgba(16,185,129,0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                            Verdict: Human Was Right
-                          </span>
-                        </div>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#1E293B', lineHeight: '1.5' }}>
-                          <strong>Contract Issue:</strong> Model substituted a <em>reasonable standard of care</em> with a <em>strict fiduciary standard of utmost good faith</em> and a <em>3-year term</em> with <em>in perpetuity</em>.
-                        </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
-                          <strong>Judge v1 False Pass:</strong> Judge v1 assumed stricter standard was 'safer'.<br />
-                          <strong>Legal Reality:</strong> Commercial NDAs do not create fiduciary relationships. Imposing fiduciary duties exposes the party to punitive tort liability and disgorgement.
-                        </p>
-                        <div style={{ background: 'rgba(16,185,129,0.08)', padding: '8px', borderRadius: '6px', fontSize: '11px', color: '#10B981' }}>
-                          ✓ Fixed in Judge v2 via Calibration Example 1
-                        </div>
-                      </div>
-
-                      {/* Disagreement 2 */}
-                      <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#38BDF8' }}>Disagreement 2: Case CASE-002</span>
-                          <span style={{ background: 'rgba(16,185,129,0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                            Verdict: Human Was Right
-                          </span>
-                        </div>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#1E293B', lineHeight: '1.5' }}>
-                          <strong>Contract Issue:</strong> Model cited a $5,000,000 liability cap from a superseded draft rather than the executed restatement (12 months trailing fees).
-                        </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: '1.5' }}>
-                          <strong>Judge v1 False Pass:</strong> Judge v1 saw '$5,000,000' in the raw context block and passed it.<br />
-                          <strong>Legal Reality:</strong> Executed restatements legally extinguish prior drafts. Advising a client based on superseded text is malpractice.
-                        </p>
-                        <div style={{ background: 'rgba(16,185,129,0.08)', padding: '8px', borderRadius: '6px', fontSize: '11px', color: '#10B981' }}>
-                          ✓ Fixed in Judge v2 via Calibration Example 2
-                        </div>
-                      </div>
-
-                    </div>
-
-                  </div>
-                )}
-
-                {/* 6. SUB-TAB 4: BONUS CHALLENGE (SUPERSEDED AMENDMENT TRAP) */}
-                {w6SubTab === 'bonus' && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Bonus Challenge: Confidently, Faithfully Wrong Retrieval Trap</h3>
-                        <span style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                          RAGAS Failure Mode
-                        </span>
-                      </div>
-                      <span style={{ fontSize: '12px', color: '#475569', marginTop: '4px', display: 'block' }}>
-                        Demonstrating why aggregate faithfulness scores hide critical contract review failures when retriever fetches a superseded amendment
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-                      <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '16px', borderRadius: '12px' }}>
-                        <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>RAGAS Faithfulness</span>
-                        <span style={{ fontSize: '24px', fontWeight: '900', color: '#10B981' }}>{bonusRagasData?.trap_details?.faithfulness_score ?? 0.96}</span>
-                        <span style={{ fontSize: '11px', color: '#475569', display: 'block', marginTop: '2px' }}>Confidently grounded in retrieved text</span>
-                      </div>
-
-                      <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '16px', borderRadius: '12px' }}>
-                        <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>RAGAS Context Precision</span>
-                        <span style={{ fontSize: '24px', fontWeight: '900', color: '#EF4444' }}>{bonusRagasData?.trap_details?.context_precision_score ?? '0.00'}</span>
-                        <span style={{ fontSize: '11px', color: '#EF4444', display: 'block', marginTop: '2px' }}>Retrieved chunk was superseded draft!</span>
-                      </div>
-
-                      <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', padding: '16px', borderRadius: '12px' }}>
-                        <span style={{ fontSize: '11px', color: '#38BDF8', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>Human / Legal Ground Truth</span>
-                        <span style={{ fontSize: '20px', fontWeight: '900', color: '#EF4444' }}>{bonusRagasData?.trap_details?.human_verdict ?? 'FAIL (Malpractice)'}</span>
-                        <span style={{ fontSize: '11px', color: '#475569', display: 'block', marginTop: '2px' }}>Executed agreement specifies 12mo fees</span>
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '18px', fontSize: '13px', color: '#1E293B', lineHeight: '1.6' }}>
-                      <h4 style={{ color: '#F59E0B', marginTop: 0 }}>Why the Overall Average Hides It:</h4>
-                      <p style={{ margin: 0 }}>
-                        {bonusRagasData?.trap_details?.why_aggregate_hides_it ?? (
-                          "If an evaluation suite scores 0.94 aggregate faithfulness across 25 contract queries, leadership assumes the system is trustworthy. However, that high average happily hides Case CASE-002, where the AI gave a completely incorrect $5,000,000 liability advice because it retrieved a superseded draft rather than the executed restatement. The answer was 100% faithful to the wrong chunk. Without combining deterministic assertions, context precision, and human-calibrated LLM judges, RAG systems create severe legal liabilities."
-                        )}
-                      </p>
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
-            ) : currentView === 'agent_loops' ? (
-              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
-                
-                {/* 1. MODULE TITLE & DASHBOARD HEADER */}
-                <div style={{ background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.1) 0%, rgba(168, 85, 247, 0.08) 100%)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '16px', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ background: '#EAB308', color: '#000000', fontSize: '11px', fontWeight: '900', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
-                        Week 7 · Module 4
-                      </span>
-                      <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: '#0F172A' }}>
-                        Agent Loops — and When Not to Use Them
-                      </h2>
-                    </div>
-                    <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#CBD5E1', maxWidth: '750px' }}>
-                      Build an AI agent that operates in a transparent ReAct loop (Plan → Act → Observe) with safety budgets and memory — and race it against a plain fixed sequence workflow on <strong>Speed</strong>, <strong>Cost</strong>, and <strong>Reliability</strong> across Tracks A–F.
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      onClick={() => handleRunW7Race()}
-                      disabled={isW7Running}
-                      className="btn-3d btn-3d-primary"
-                      style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(180deg, #EAB308 0%, #CA8A04 100%)', color: '#000000', borderColor: '#EAB308' }}
-                    >
-                      <Zap size={16} />
-                      {isW7Running ? 'Running Race...' : 'Race Agent vs Fixed'}
-                    </button>
-                    <button
-                      onClick={() => handleRunW7Suite()}
-                      disabled={isW7Running}
-                      className="btn-3d btn-3d-secondary"
-                      style={{ padding: '10px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
-                    >
-                      <Activity size={16} />
-                      Run Full Suite
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. TRACK SELECTOR & CONFIGURATION BAR */}
-                <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  
-                  {/* Track Pills (A-F) */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8', textTransform: 'uppercase', marginRight: '4px' }}>Select Track:</span>
-                    {[
-                      { code: 'A', name: 'Support', full: 'Customer Support Tickets' },
-                      { code: 'B', name: 'Recipes', full: 'Recipes & Food' },
-                      { code: 'C', name: 'HR Policy', full: 'HR Policy Benefits' },
-                      { code: 'D', name: 'Insurance', full: 'Insurance Claims' },
-                      { code: 'E', name: 'Dev Docs', full: 'Developer Documentation' },
-                      { code: 'F', name: 'Legal', full: 'Legal Contracts' }
-                    ].map(t => (
-                      <button
-                        key={t.code}
-                        onClick={() => handleTrackChange(t.code as any)}
-                        style={{
-                          padding: '8px 14px',
-                          borderRadius: '10px',
-                          fontSize: '12px',
-                          fontWeight: '700',
-                          cursor: 'pointer',
-                          border: w7TrackCode === t.code ? '1px solid #EAB308' : '1px solid rgba(255,255,255,0.1)',
-                          background: w7TrackCode === t.code ? 'rgba(234, 179, 8, 0.15)' : 'rgba(255,255,255,0.03)',
-                          color: w7TrackCode === t.code ? '#EAB308' : '#CBD5E1',
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        Track {t.code}: {t.name}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Query & Budget Settings Row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '16px', alignItems: 'end' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#94A3B8', marginBottom: '6px' }}>
-                        Track {w7TrackCode} Input Scenario Query:
-                      </label>
-                      <input
-                        type="text"
-                        value={w7Query}
-                        onChange={(e) => setW7Query(e.target.value)}
-                        style={{ width: '100%', background: '#F8FAFC', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '10px 14px', color: '#0F172A', fontSize: '13px' }}
-                      />
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94A3B8', fontWeight: 'bold', marginBottom: '6px' }}>
-                        <span>Safety Max Steps:</span>
-                        <span style={{ color: '#EAB308' }}>{w7MaxSteps} steps</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max="10"
-                        value={w7MaxSteps}
-                        onChange={(e) => setW7MaxSteps(parseInt(e.target.value))}
-                        style={{ width: '100%', accentColor: '#EAB308' }}
-                      />
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94A3B8', fontWeight: 'bold', marginBottom: '6px' }}>
-                        <span>Token Budget Cap:</span>
-                        <span style={{ color: '#EAB308' }}>{w7TokenBudget} tokens</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="500"
-                        max="5000"
-                        step="250"
-                        value={w7TokenBudget}
-                        onChange={(e) => setW7TokenBudget(parseInt(e.target.value))}
-                        style={{ width: '100%', accentColor: '#EAB308' }}
-                      />
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* 3. SUB-TAB NAVIGATION BAR */}
-                <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '12px' }}>
-                  {[
-                    { key: 'race', label: '⚡ Live Race Arena', icon: <Zap size={14} /> },
-                    { key: 'inspector', label: '🔍 Agent Step Inspector', icon: <Sliders size={14} /> },
-                    { key: 'suite', label: '📊 Benchmark Race Suite', icon: <Activity size={14} /> },
-                    { key: 'decision', label: '📐 Decision Framework', icon: <Cpu size={14} /> }
-                  ].map(tab => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setW7SubTab(tab.key as any)}
+                    <div
                       style={{
-                        padding: '8px 16px',
-                        borderRadius: '10px',
-                        fontSize: '13px',
-                        fontWeight: 'bold',
+                        width: '56px',
+                        height: '56px',
+                        borderRadius: '50%',
+                        background: '#EFF6FF',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        border: 'none',
-                        background: w7SubTab === tab.key ? 'rgba(234, 179, 8, 0.15)' : 'transparent',
-                        color: w7SubTab === tab.key ? '#EAB308' : '#94A3B8',
-                        cursor: 'pointer'
+                        justifyContent: 'center',
+                        margin: '0 auto 16px',
+                        color: '#2563EB'
                       }}
                     >
-                      {tab.icon}
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* 4. SUB-TAB 1: LIVE RACE ARENA */}
-                {w7SubTab === 'race' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    {/* Race Winner Banner */}
-                    {w7RaceData && (
-                      <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <div style={{ background: '#10B981', color: '#000000', borderRadius: '12px', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <CheckCircle2 size={24} />
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontSize: '11px', fontWeight: '900', color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Race Winner</span>
-                            <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
-                              {w7RaceData.race_winner}
-                            </span>
-                          </div>
-                          <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#0F172A', fontWeight: '500', lineHeight: '1.5' }}>
-                            {w7RaceData.ship_recommendation}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Metrics Comparison Cards (Speed, Cost, Reliability) */}
-                    {w7RaceData && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                        
-                        {/* Speed Metric Card */}
-                        <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '18px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                            <Clock size={16} style={{ color: '#38BDF8' }} />
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>SPEED (LATENCY)</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                            <div>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Agent Loop</span>
-                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#EF4444' }}>{w7RaceData.agent_result.total_latency_ms}ms</span>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Fixed Workflow</span>
-                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#10B981' }}>{w7RaceData.fixed_result.total_latency_ms}ms</span>
-                            </div>
-                          </div>
-                          <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38BDF8', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', textAlign: 'center' }}>
-                            ⚡ Fixed is {w7RaceData.metrics_comparison.latency.speedup_multiplier}x Faster ({w7RaceData.metrics_comparison.latency.fixed_savings_pct}% faster)
-                          </div>
-                        </div>
-
-                        {/* Cost Metric Card */}
-                        <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '18px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                            <DollarSign size={16} style={{ color: '#EAB308' }} />
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>COST ($ / TOKENS)</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                            <div>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Agent ({w7RaceData.agent_result.total_tokens} tk)</span>
-                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#EF4444' }}>${w7RaceData.agent_result.cost_dollars}</span>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Fixed ({w7RaceData.fixed_result.total_tokens} tk)</span>
-                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#10B981' }}>${w7RaceData.fixed_result.cost_dollars}</span>
-                            </div>
-                          </div>
-                          <div style={{ background: 'rgba(234, 179, 8, 0.1)', color: '#EAB308', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', textAlign: 'center' }}>
-                            💰 Fixed is {w7RaceData.metrics_comparison.cost.fixed_savings_pct}% Cheaper
-                          </div>
-                        </div>
-
-                        {/* Reliability Metric Card */}
-                        <div style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '14px', padding: '18px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                            <ShieldCheck size={16} style={{ color: '#10B981' }} />
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#94A3B8' }}>RELIABILITY (%)</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-                            <div>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Agent Accuracy</span>
-                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#38BDF8' }}>{w7RaceData.agent_result.reliability_score_pct}%</span>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Fixed Accuracy</span>
-                              <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#10B981' }}>{w7RaceData.fixed_result.reliability_score_pct}%</span>
-                            </div>
-                          </div>
-                          <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', textAlign: 'center' }}>
-                            🎯 Fixed is 100% Deterministic & Reliable
-                          </div>
-                        </div>
-
-                      </div>
-                    )}
-
-                    {/* Side-by-Side Execution Trace */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      
-                      {/* Left: Agent Execution Loop */}
-                      <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#A855F7' }}>Hand-Built ReAct Agent Loop</h3>
-                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>Dynamic LLM Tool Selection & Reasoning Loop</span>
-                          </div>
-                          <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#A855F7', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                            {w7AgentData?.total_steps ?? 0} Steps
-                          </span>
-                        </div>
-
-                        {w7AgentData ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {w7AgentData.steps.map((st: any) => (
-                              <div key={st.step_index} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '12px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                                  <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#A855F7' }}>Step {st.step_index}: {st.action_tool}</span>
-                                  <span style={{ fontSize: '10px', color: '#64748B' }}>{st.latency_ms}ms | {st.tokens_used} tk</span>
-                                </div>
-                                <p style={{ margin: '0 0 6px 0', fontSize: '12px', color: '#CBD5E1', fontStyle: 'italic' }}>"{st.thought}"</p>
-                                <div style={{ background: 'rgba(16, 185, 129, 0.08)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', color: '#10B981', fontFamily: 'monospace' }}>
-                                  {st.observation}
-                                </div>
-                              </div>
-                            ))}
-                            <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.2)', padding: '12px', borderRadius: '10px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#EAB308', display: 'block', marginBottom: '4px' }}>Final Agent Answer:</span>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#0F172A', lineHeight: '1.5' }}>{w7AgentData.final_answer}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ textAlign: 'center', padding: '40px', color: '#64748B', fontSize: '13px' }}>Click 'Race Agent vs Fixed' to run.</div>
-                        )}
-                      </div>
-
-                      {/* Right: Fixed Sequence Workflow */}
-                      <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#10B981' }}>Plain Fixed Sequence Workflow</h3>
-                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>Deterministic 3-Step Pipeline (Zero Loop Overhead)</span>
-                          </div>
-                          <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold' }}>
-                            Single Pass
-                          </span>
-                        </div>
-
-                        {w7RaceData?.fixed_result ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {w7RaceData.fixed_result.steps.map((st: any) => (
-                              <div key={st.step_index} style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '10px', padding: '12px' }}>
-                                <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', display: 'block', marginBottom: '4px' }}>{st.action}</span>
-                                <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', color: '#38BDF8', fontFamily: 'monospace' }}>
-                                  {st.output}
-                                </div>
-                              </div>
-                            ))}
-                            <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '12px', borderRadius: '10px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#10B981', display: 'block', marginBottom: '4px' }}>Fixed Workflow Final Output:</span>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#0F172A', lineHeight: '1.5' }}>{w7RaceData.fixed_result.final_answer}</p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ textAlign: 'center', padding: '40px', color: '#64748B', fontSize: '13px' }}>Click 'Race Agent vs Fixed' to run.</div>
-                        )}
-                      </div>
-
+                      <Bot size={28} />
                     </div>
-
+                    <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#0F172A', marginBottom: '8px' }}>
+                      Legal & Contracts Intelligence
+                    </h3>
+                    <p style={{ fontSize: '14px', color: '#475569', maxWidth: '520px', margin: '0 auto', lineHeight: '1.6' }}>
+                      Ask questions about governing law, termination notice periods, liability caps, or GDPR standard clauses across all uploaded agreements.
+                    </p>
                   </div>
                 )}
 
-                {/* 5. SUB-TAB 2: AGENT STEP INSPECTOR */}
-                {w7SubTab === 'inspector' && w7AgentData && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Hand-Built Agent Step Inspector & Safety Budgets</h3>
-                      <span style={{ fontSize: '12px', color: '#94A3B8' }}>Inspect every turn of the ~50-line ReAct loop, token accumulation, and memory mode</span>
-                    </div>
-
-                    {/* Budget & Memory Status Banner */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
-                      <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
-                        <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Step Budget Usage</span>
-                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#EAB308', margin: '4px 0' }}>
-                          {w7AgentData.total_steps} / {w7MaxSteps} Max Steps
-                        </div>
-                        <div style={{ width: '100%', background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px' }}>
-                          <div style={{ width: `${Math.min(100, (w7AgentData.total_steps / w7MaxSteps) * 100)}%`, background: '#EAB308', height: '100%', borderRadius: '3px' }}></div>
-                        </div>
-                      </div>
-
-                      <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
-                        <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Token Budget Usage</span>
-                        <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#38BDF8', margin: '4px 0' }}>
-                          {w7AgentData.total_tokens} / {w7TokenBudget} Tokens
-                        </div>
-                        <div style={{ width: '100%', background: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px' }}>
-                          <div style={{ width: `${Math.min(100, (w7AgentData.total_tokens / w7TokenBudget) * 100)}%`, background: '#38BDF8', height: '100%', borderRadius: '3px' }}></div>
-                        </div>
-                      </div>
-
-                      <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
-                        <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'bold' }}>Agent Memory Mode</span>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#A855F7', margin: '4px 0' }}>
-                          {w7AgentData.memory_summary}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Step Trajectory Log Cards */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      {w7AgentData.steps.map((st: any) => (
-                        <div key={st.step_index} style={{ background: '#F8FAFC', border: '1px solid rgba(168,85,247,0.2)', borderRadius: '12px', padding: '16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ background: '#A855F7', color: '#000000', fontSize: '11px', fontWeight: '900', padding: '2px 6px', borderRadius: '4px' }}>STEP {st.step_index}</span>
-                              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0F172A' }}>Action Tool: {st.action_tool}</span>
-                            </div>
-                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>{st.timestamp} | {st.latency_ms}ms | {st.tokens_used} tokens</span>
-                          </div>
-                          
-                          <div style={{ marginBottom: '8px' }}>
-                            <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 'bold', display: 'block' }}>ReAct Thought & Plan:</span>
-                            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#CBD5E1' }}>{st.thought}</p>
-                          </div>
-
-                          <div>
-                            <span style={{ fontSize: '11px', color: '#10B981', fontWeight: 'bold', display: 'block' }}>Tool Observation:</span>
-                            <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', color: '#10B981', fontFamily: 'monospace', marginTop: '2px' }}>
-                              {st.observation}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
+                {isLoadingMessages ? (
+                  <div style={{ textAlign: 'center', padding: '60px', color: '#64748B' }}>
+                    <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px' }} />
+                    <p style={{ fontSize: '13px' }}>Loading conversation history...</p>
                   </div>
-                )}
-
-                {/* 6. SUB-TAB 3: BENCHMARK RACE SUITE */}
-                {w7SubTab === 'suite' && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Benchmark Race Suite (Tracks A–F)</h3>
-                        <span style={{ fontSize: '12px', color: '#94A3B8' }}>Comprehensive Head-to-Head Comparison Across All 6 Domains</span>
-                      </div>
-                      <button
-                        onClick={() => handleRunW7Suite()}
-                        disabled={isW7Running}
-                        className="btn-3d btn-3d-primary"
-                        style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px' }}
+                ) : (
+                  messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`message-bubble-wrapper ${msg.sender === 'user' ? 'user-msg' : 'bot-msg'}`}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                        marginBottom: '20px'
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '10px',
+                          maxWidth: '85%',
+                          flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row'
+                        }}
                       >
-                        {isW7Running ? 'Running Suite...' : 'Execute Suite Now'}
-                      </button>
-                    </div>
-
-                    {w7SuiteData && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        
-                        {/* Summary metrics */}
-                        <div style={{ background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <span style={{ fontSize: '11px', color: '#EAB308', fontWeight: 'bold', textTransform: 'uppercase' }}>Aggregate Suite Verdict</span>
-                            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#0F172A', fontWeight: '500' }}>
-                              {w7SuiteData.aggregate_summary.overall_verdict}
-                            </p>
-                          </div>
-                          <div style={{ display: 'flex', gap: '16px', textAlign: 'right' }}>
-                            <div>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Avg Fixed Speedup</span>
-                              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#10B981' }}>{w7SuiteData.aggregate_summary.avg_fixed_speedup}</span>
-                            </div>
-                            <div>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'block' }}>Avg Cost Savings</span>
-                              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#EAB308' }}>{w7SuiteData.aggregate_summary.avg_fixed_cost_savings}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Benchmark Table */}
-                        <div style={{ overflowX: 'auto' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', color: '#CBD5E1' }}>
-                            <thead>
-                              <tr style={{ background: '#F8FAFC', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                                <th style={{ padding: '10px' }}>Track</th>
-                                <th style={{ padding: '10px' }}>Domain Topic</th>
-                                <th style={{ padding: '10px' }}>Agent Time</th>
-                                <th style={{ padding: '10px' }}>Fixed Time</th>
-                                <th style={{ padding: '10px' }}>Speedup</th>
-                                <th style={{ padding: '10px' }}>Fixed Savings</th>
-                                <th style={{ padding: '10px' }}>Race Winner</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {w7SuiteData.results.map((res: any) => (
-                                <tr key={res.track_code} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#EAB308' }}>Track {res.track_code}</td>
-                                  <td style={{ padding: '10px' }}>{res.track_name}</td>
-                                  <td style={{ padding: '10px', color: '#EF4444' }}>{res.agent_result.total_latency_ms}ms</td>
-                                  <td style={{ padding: '10px', color: '#10B981', fontWeight: 'bold' }}>{res.fixed_result.total_latency_ms}ms</td>
-                                  <td style={{ padding: '10px', color: '#38BDF8', fontWeight: 'bold' }}>{res.metrics_comparison.latency.speedup_multiplier}x faster</td>
-                                  <td style={{ padding: '10px', color: '#10B981', fontWeight: 'bold' }}>{res.metrics_comparison.cost.fixed_savings_pct}% cheaper</td>
-                                  <td style={{ padding: '10px' }}>
-                                    <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }}>
-                                      {res.race_winner}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-
-                      </div>
-                    )}
-
-                  </div>
-                )}
-
-                {/* 7. SUB-TAB 4: DECISION FRAMEWORK & TRADE-OFF GUIDE */}
-                {w7SubTab === 'decision' && (
-                  <div style={{ background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: '1px solid #CBD5E1', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
-                    <div>
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 'bold', color: '#0F172A' }}>Architectural Decision Framework: Agent vs Fixed Sequence</h3>
-                      <span style={{ fontSize: '12px', color: '#94A3B8' }}>When to use an AI agent loop — and why fixed sequence workflows win for structured business tasks</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                      
-                      {/* Fixed Sequence Advantages */}
-                      <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '12px', padding: '18px' }}>
-                        <h4 style={{ margin: '0 0 10px 0', color: '#10B981', fontSize: '15px' }}>✓ When Fixed Workflows Win (Use 80% of the time)</h4>
-                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.7' }}>
-                          <li><strong>Known Step Sequence:</strong> You already know the exact 3-4 steps needed (Retrieve → Rule Check → Compute → Format).</li>
-                          <li><strong>Strict Latency SLA:</strong> Completes in ~120ms (single LLM pass) vs 500ms+ multi-turn agent loops.</li>
-                          <li><strong>Cost Optimization:</strong> Uses 60-75% fewer tokens by eliminating intermediate reasoning turn loops.</li>
-                          <li><strong>100% Reliability:</strong> Zero risk of infinite loops, hallucinated tool calls, or budget exhaustion.</li>
-                        </ul>
-                      </div>
-
-                      {/* Agent Loop Advantages */}
-                      <div style={{ background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.2)', borderRadius: '12px', padding: '18px' }}>
-                        <h4 style={{ margin: '0 0 10px 0', color: '#A855F7', fontSize: '15px' }}>🤖 When Agent Loops Are Necessary</h4>
-                        <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.7' }}>
-                          <li><strong>Dynamic Input Paths:</strong> The sequence of steps depends entirely on what the previous tool returned.</li>
-                          <li><strong>Open-Ended Problem Solving:</strong> Coding debuggers, research agents, or complex multi-database investigative queries.</li>
-                          <li><strong>Variable Tool Selection:</strong> The agent chooses among 10+ candidate APIs dynamically based on user intent.</li>
-                        </ul>
-                      </div>
-
-                    </div>
-
-                    <div style={{ background: '#F8FAFC', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '12px', padding: '16px', fontSize: '13px', color: '#CBD5E1', lineHeight: '1.6' }}>
-                      <span style={{ color: '#EAB308', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>💡 Module Takeaway:</span>
-                      "Building a ~50-line ReAct loop yourself ensures you understand every turn of the loop without magic frameworks hiding failure modes. Always test a plain fixed sequence first — if the path is predictable, ship the fixed workflow for speed, cost, and reliability."
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
-            ) : (
-              !activeConvId || isLoadingMessages ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#475569', gap: '12px', padding: '100px 0' }}>
-                  <RefreshCw size={24} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span>Loading conversation history...</span>
-                </div>
-              ) : (
-                /* CONVERSATION THREAD */
-                <>
-                  {messages.length === 0 ? (
-                    /* Welcome View with Agent Cards & Suggestions */
-                    <div className="chat-welcome-container">
-                      <div className="welcome-avatar-wrapper">
-                        {currentAgentInfo.icon}
-                      </div>
-                      <div>
-                        <h3 className="welcome-title">{currentAgentInfo.title}</h3>
-                        <p className="welcome-desc">
-                          {currentAgentInfo.desc}
-                        </p>
-                      </div>
-
-
-                      {/* Suggestions list for current agent */}
-                      <div className="welcome-suggestions-list">
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#737373', fontWeight: '700' }}>
-                          Suggested Questions
-                        </div>
-                        {currentAgentInfo.suggestions.map((suggestion, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => handleSendMessage(suggestion)}
-                            className="suggestion-chip"
-                          >
-                            {suggestion}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    /* Message logs mapping */
-                    messages.map((m) => {
-                      const isUser = m.sender === 'user';
-                      const botRibbonClass = `ribbon-${selectedAgent}`;
-
-                      return (
-                        <div 
-                          key={m.id} 
-                          className={`message-row ${isUser ? 'user' : 'bot'}`}
+                        <div
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            background: msg.sender === 'user' ? '#3B82F6' : '#F1F5F9',
+                            color: msg.sender === 'user' ? '#FFFFFF' : '#1E293B',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}
                         >
-                          {/* AI avatar */}
-                          {!isUser && (
-                            <div className="message-avatar">
-                              <Bot size={15} style={{ color: '#000000' }} />
+                          {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
+                        </div>
+
+                        <div
+                          style={{
+                            background: msg.sender === 'user' ? '#2563EB' : '#FFFFFF',
+                            color: msg.sender === 'user' ? '#FFFFFF' : '#0F172A',
+                            padding: '14px 18px',
+                            borderRadius: msg.sender === 'user' ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
+                            border: msg.sender === 'user' ? 'none' : '1px solid #E2E8F0',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                            fontSize: '14px',
+                            lineHeight: '1.6',
+                            whiteSpace: 'pre-wrap'
+                          }}
+                        >
+                          {msg.content}
+
+                          {/* Sources & Citations Box */}
+                          {msg.sources && msg.sources.length > 0 && (
+                            <div
+                              style={{
+                                marginTop: '14px',
+                                paddingTop: '12px',
+                                borderTop: '1px solid #E2E8F0',
+                                fontSize: '12px'
+                              }}
+                            >
+                              <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
+                                Verified Citations:
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {msg.sources.map((src: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    style={{
+                                      background: '#F8FAFC',
+                                      padding: '8px 12px',
+                                      borderRadius: '8px',
+                                      border: '1px solid #E2E8F0'
+                                    }}
+                                  >
+                                    <div style={{ fontWeight: '600', color: '#1E40AF', display: 'flex', justifyContent: 'space-between' }}>
+                                      <span>{src.document_name}</span>
+                                      {src.score && <span>Relevance: {(src.score * 100).toFixed(0)}%</span>}
+                                    </div>
+                                    <p style={{ margin: '4px 0 0 0', color: '#334155', fontStyle: 'italic' }}>
+                                      "{src.snippet || src.content}"
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
 
-                          <div className="message-bubble-wrapper">
-                            {/* Bubble Container */}
-                            <div className={`message-bubble ${isUser ? '' : botRibbonClass}`}>
-                              {isUser ? (
-                                <p style={{ whiteSpace: 'pre-wrap' }}>{m.content}</p>
-                              ) : (
-                                renderMessageContent(m.content, m.id)
-                              )}
-                            </div>
+                          {/* Action Bar for Bot Messages */}
+                          {msg.sender === 'bot' && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                marginTop: '10px',
+                                paddingTop: '8px',
+                                borderTop: '1px solid #F1F5F9',
+                                color: '#64748B',
+                                fontSize: '12px'
+                              }}
+                            >
+                              <button
+                                onClick={() => copyToClipboard(msg.content, `msg-${msg.id}`)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#64748B' }}
+                                title="Copy response"
+                              >
+                                {copiedCodeId === `msg-${msg.id}` ? <Check size={13} color="#16A34A" /> : <Copy size={13} />}
+                                <span>{copiedCodeId === `msg-${msg.id}` ? 'Copied' : 'Copy'}</span>
+                              </button>
 
+                              <button
+                                onClick={() => speakText(msg.id, msg.content)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#64748B' }}
+                                title="Read aloud"
+                              >
+                                {speakingMessageId === msg.id ? <VolumeX size={13} color="#DC2626" /> : <Volume2 size={13} />}
+                                <span>{speakingMessageId === msg.id ? 'Stop' : 'Listen'}</span>
+                              </button>
 
-
-                            {/* Bot Message Actions */}
-                            {!isUser && m.content && (
-                              <div className="message-meta">
-                                <div className="message-meta-left">
-                                  <span>{formatTimestamp(m.timestamp)}</span>
-                                  <button 
-                                    onClick={() => toggleSpeech(m)}
-                                    className="meta-action-btn"
-                                    title={speakingMessageId === m.id ? 'Stop audio' : 'Listen'}
-                                  >
-                                    {speakingMessageId === m.id ? <VolumeX size={12} className="stop" /> : <Volume2 size={12} />}
-                                    {speakingMessageId === m.id ? 'Stop' : 'Listen'}
-                                  </button>
-                                </div>
-
-                                {/* Feedback Ratings */}
-                                <div className="feedback-group">
-                                  <button
-                                    onClick={() => handleFeedback(m.id, 'thumbs_up')}
-                                    className={`feedback-btn ${m.feedback?.rating === 'thumbs_up' ? 'up-active' : ''}`}
-                                    title="Helpful response"
-                                  >
-                                    <ThumbsUp size={12} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleFeedback(m.id, 'thumbs_down')}
-                                    className={`feedback-btn ${m.feedback?.rating === 'thumbs_down' ? 'down-active' : ''}`}
-                                    title="Unhelpful response"
-                                  >
-                                    <ThumbsDown size={12} />
-                                  </button>
-                                </div>
+                              <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
+                                <button
+                                  onClick={() => handleFeedback(msg.id, 'thumbs_up')}
+                                  style={{
+                                    background: msg.feedback?.rating === 'thumbs_up' ? '#DCFCE7' : 'none',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    padding: '3px 6px',
+                                    cursor: 'pointer',
+                                    color: msg.feedback?.rating === 'thumbs_up' ? '#16A34A' : '#64748B'
+                                  }}
+                                  title="Accurate Answer"
+                                >
+                                  <ThumbsUp size={13} />
+                                </button>
+                                <button
+                                  onClick={() => handleFeedback(msg.id, 'thumbs_down')}
+                                  style={{
+                                    background: msg.feedback?.rating === 'thumbs_down' ? '#FEE2E2' : 'none',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    padding: '3px 6px',
+                                    cursor: 'pointer',
+                                    color: msg.feedback?.rating === 'thumbs_down' ? '#DC2626' : '#64748B'
+                                  }}
+                                  title="Inaccurate / Hallucination"
+                                >
+                                  <ThumbsDown size={13} />
+                                </button>
                               </div>
-                            )}
-
-                            {/* User Timestamp */}
-                            {isUser && (
-                              <div style={{ textAlign: 'right', fontSize: '10px', color: '#64748B', paddingRight: '4px', fontWeight: '500' }}>
-                                {formatTimestamp(m.timestamp)}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* User avatar */}
-                          {isUser && (
-                            <div className="message-avatar">
-                              <User size={15} style={{ color: '#FFFFFF' }} />
                             </div>
                           )}
                         </div>
-                      );
-                    })
-                  )}
-                </>
-              )
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {isGenerating && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748B', fontSize: '13px', margin: '16px 0' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563EB' }}>
+                      <Bot size={16} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Synthesizing grounded answer from contract clauses...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {/* 3D FLOATING INPUT PANEL */}
-        {activeConvId && currentView === 'chat' && (
+        {/* Floating Input Panel */}
+        {currentView === 'chat' && (
           <div className="input-panel-floating">
             <div className="input-container-row">
-              
-              {/* Dictation Microphone */}
               <button
                 type="button"
                 onClick={toggleListening}
                 className={`btn-3d btn-3d-secondary ${isListening ? 'listening' : ''}`}
-                title={isListening ? 'Stop listening' : 'Start speaking'}
+                title={isListening ? 'Stop listening' : 'Start dictation'}
               >
-                {isListening ? (
-                  <div className="soundwaves">
-                    <span className="soundwave-bar"></span>
-                    <span className="soundwave-bar"></span>
-                    <span className="soundwave-bar"></span>
-                    <span className="soundwave-bar"></span>
-                  </div>
-                ) : (
-                  <Mic size={18} />
-                )}
+                <Mic size={18} />
               </button>
 
-              {/* Text Input Block */}
               <div className="textarea-wrapper">
                 <textarea
                   ref={textareaRef}
@@ -3350,63 +888,56 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
                       handleSendMessage();
                     }
                   }}
-                  placeholder={isListening ? 'Voice detection active... Speak clearly.' : 'Type message here... (Shift+Enter for newline)'}
+                  placeholder="Ask a legal query regarding contract terms... (e.g. 'What is the notice period for termination?')"
                   className="chat-textarea"
                   disabled={isListening || isGenerating}
                 />
 
-                {/* Send Button */}
                 <div className="absolute-send-btn">
                   <button
-                    onClick={() => handleSendMessage()}
-                    disabled={!inputText.trim() || isGenerating || isListening}
+                    onClick={handleSendMessage}
+                    disabled={!inputText.trim() || isGenerating}
                     className="btn-3d btn-3d-primary"
-                    style={{ padding: '8px 12px', borderRadius: '10px' }}
+                    style={{ padding: '8px 14px', borderRadius: '10px' }}
                     title="Send Message"
                   >
                     <Send size={14} />
                   </button>
                 </div>
               </div>
-
             </div>
           </div>
         )}
-
       </main>
 
-
-
-      {/* 4. CUSTOM DELETE CONFIRMATION MODAL */}
+      {/* Delete Chat Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="modal-overlay">
           <div className="modal-content animate-scale-in">
-            <h3 className="modal-title">Delete Session</h3>
+            <h3 className="modal-title">Delete Chat Session</h3>
             <p className="modal-desc">
-              Are you sure you want to permanently erase this chat session? This action is irreversible.
+              Are you sure you want to permanently erase this session?
             </p>
             <div className="modal-actions">
-              <button 
+              <button
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   setConvIdToDelete(null);
-                }} 
+                }}
                 className="btn-3d btn-3d-secondary"
                 style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '12px' }}
               >
                 Cancel
               </button>
-              <button 
-                onClick={confirmDelete}
+              <button
+                onClick={confirmDeleteConversation}
                 className="btn-3d btn-3d-primary"
-                style={{ 
-                  padding: '8px 16px', 
-                  borderRadius: '10px', 
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
                   fontSize: '12px',
-                  background: 'linear-gradient(180deg, #EF4444 0%, #DC2626 100%)',
-                  color: '#FFFFFF',
-                  borderColor: '#EF4444',
-                  boxShadow: '0 4px 0px #991B1B, 0 8px 15px rgba(239, 68, 68, 0.2)'
+                  background: '#DC2626',
+                  color: '#FFFFFF'
                 }}
               >
                 Delete
@@ -3416,75 +947,42 @@ ${item.honest_notes.map((n: string) => `  * ${n}`).join('\n')}`).join('\n\n')}
         </div>
       )}
 
-      {/* 5. DOCUMENT DELETE CONFIRMATION POPUP MODAL */}
+      {/* Document Delete Confirmation Modal */}
       {docToDelete && (
         <div className="modal-overlay" onClick={() => !deletingDocId && setDocToDelete(null)}>
-          <div 
-            className="modal-content animate-scale-in" 
+          <div
+            className="modal-content animate-scale-in"
             onClick={(e) => e.stopPropagation()}
-            style={{ textAlign: 'center', maxWidth: '440px', padding: '28px 24px', background: '#FFFFFF', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', border: '1px solid #E2E8F0' }}
+            style={{ textAlign: 'center', maxWidth: '440px', padding: '28px 24px', background: '#FFFFFF', borderRadius: '16px' }}
           >
-            <div style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: '50%',
-              background: '#FEE2E2',
-              border: '1px solid #FECACA',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-              color: '#DC2626'
-            }}>
-              <Trash2 size={24} />
-            </div>
-
             <h3 className="modal-title" style={{ fontSize: '18px', fontWeight: 'bold', color: '#0F172A', marginBottom: '8px' }}>
               Delete Document?
             </h3>
-
             <p className="modal-desc" style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6', marginBottom: '24px' }}>
-              Are you sure you want to permanently delete <strong style={{ color: '#0F172A', wordBreak: 'break-all' }}>"{docToDelete.filename}"</strong> from the Knowledge Base? All indexed chunks and vector embeddings will be removed.
+              Permanently delete "{docToDelete.filename}"? All indexed chunks will be purged.
             </p>
-
             <div className="modal-actions" style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
-              <button 
+              <button
                 onClick={() => setDocToDelete(null)}
                 disabled={!!deletingDocId}
                 className="btn-3d btn-3d-secondary"
-                style={{ padding: '9px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: '600' }}
+                style={{ padding: '9px 18px', borderRadius: '10px', fontSize: '13px' }}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={() => handleDeleteDocument(docToDelete.id)}
                 disabled={!!deletingDocId}
                 className="btn-3d btn-3d-primary"
-                style={{ 
-                  padding: '9px 20px', 
-                  borderRadius: '10px', 
+                style={{
+                  padding: '9px 20px',
+                  borderRadius: '10px',
                   fontSize: '13px',
-                  fontWeight: '600',
-                  background: 'linear-gradient(180deg, #EF4444 0%, #DC2626 100%)',
-                  borderColor: '#B91C1C',
-                  color: '#FFFFFF',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 0px #991B1B, 0 8px 15px rgba(239, 68, 68, 0.2)'
+                  background: '#DC2626',
+                  color: '#FFFFFF'
                 }}
               >
-                {deletingDocId ? (
-                  <>
-                    <RefreshCw size={14} className="animate-spin" />
-                    <span>Deleting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 size={14} />
-                    <span>Yes, Delete</span>
-                  </>
-                )}
+                {deletingDocId ? 'Deleting...' : 'Yes, Delete'}
               </button>
             </div>
           </div>

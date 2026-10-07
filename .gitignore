@@ -1,12 +1,17 @@
 # Python virtual environment
 backend/.venv/
-backend/__pycache__/
+__pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
 
 # Local databases
 chatbot.db
 *.sqlite3
 backend/chroma_db/
+test_chroma_db/
+backend/chroma_db_test/
+.pytest_cache/
 
 # Sensitive configuration files (contains API keys)
 backend/.env

@@ -1,0 +1,48 @@
+### Model Context Protocol (MCP) Server & Tool Registry API
+@baseUrl = http://localhost:8000
+
+### 1. List Registered MCP Servers
+# @name listMcpServers
+GET {{baseUrl}}/api/mcp/servers
+Accept: application/json
+
+### 2. Discover MCP Registered Tools
+# @name listMcpTools
+GET {{baseUrl}}/api/mcp/tools
+Accept: application/json
+
+### 3. Register New MCP Server
+# @name registerMcpServer
+POST {{baseUrl}}/api/mcp/servers/register
+Content-Type: application/json
+Accept: application/json
+
+{
+  "server_name": "legal-clause-verifier",
+  "endpoint": "http://localhost:9001/mcp",
+  "tools": ["verify_clause_jurisdiction", "extract_liability_cap"]
+}
+
+### 4. Execute MCP Tool Call
+# @name callMcpTool
+POST {{baseUrl}}/api/mcp/tools/call
+Content-Type: application/json
+Accept: application/json
+
+{
+  "tool_name": "lint_code_snippet",
+  "arguments": {
+    "snippet": "SELECT * FROM contracts WHERE status = 'active';"
+  }
+}
+
+### 5. Run MCP Autonomous Agent with Tool Execution
+# @name runMcpAgent
+POST {{baseUrl}}/api/mcp/agent/run
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "Verify Delaware choice of law jurisdiction compliance",
+  "server_id": "server-local-01"
+}

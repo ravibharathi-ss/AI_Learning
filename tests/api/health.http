@@ -1,0 +1,22 @@
+### Enterprise Legal RAG Platform - Health & Readiness Checks
+@baseUrl = http://localhost:8000
+
+### 1. Basic Health Check
+# @name healthCheck
+GET {{baseUrl}}/health
+Accept: application/json
+
+### 2. Deep Readiness Check (Probes SQLite, ChromaDB & Observability)
+# @name readinessCheck
+GET {{baseUrl}}/health/ready
+Accept: application/json
+
+### 3. Root API Welcome & System Metadata
+# @name rootMeta
+GET {{baseUrl}}/
+Accept: application/json
+
+### 4. System Diagnostics (Safe operational metadata for Antigravity)
+# @name diagnostics
+GET {{baseUrl}}/api/diagnostics
+Accept: application/json

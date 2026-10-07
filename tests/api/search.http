@@ -1,0 +1,47 @@
+### Enterprise Legal RAG Platform - Search & Retrieval API
+@baseUrl = http://localhost:8000
+
+### 1. Hybrid Semantic & Exact Keyword Search
+# @name semanticSearch
+POST {{baseUrl}}/api/search
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "termination notice period days for convenience",
+  "top_k": 3,
+  "min_score": 0.25,
+  "enable_hybrid": true
+}
+
+### 2. Search With Clause Metadata Filtering
+# @name filteredSearch
+POST {{baseUrl}}/api/search
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "governing law jurisdiction",
+  "top_k": 2,
+  "min_score": 0.30
+}
+
+### 3. Search Validation Scenario: Query Too Short / Empty
+POST {{baseUrl}}/api/search
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "",
+  "top_k": 5
+}
+
+### 4. Search Validation Scenario: Top-K Out of Bounds
+POST {{baseUrl}}/api/search
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "valid search query",
+  "top_k": 250
+}

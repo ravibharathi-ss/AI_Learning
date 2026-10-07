@@ -1,0 +1,49 @@
+### Enterprise Legal RAG Platform - Document Ingestion & Lifecycle API
+@baseUrl = http://localhost:8000
+
+### 1. Upload Legal Agreement Document
+# @name uploadDocument
+POST {{baseUrl}}/api/documents
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="sample_cloud_agreement.txt"
+Content-Type: text/plain
+
+Section 12.3 Termination for Convenience: Customer may terminate this Agreement or any active Service Order for convenience without cause at any time upon providing at least sixty (60) days prior written notice to Provider.
+Section 15.1 Governing Law: This Agreement shall be governed exclusively by the laws of the State of Delaware.
+--WebAppBoundary--
+
+### Capture Document ID from upload response
+@documentId = {{uploadDocument.response.body.document_id}}
+
+### 2. Check Document Status & Ingestion Progress
+# @name getDocumentStatus
+GET {{baseUrl}}/api/documents/{{documentId}}
+Accept: application/json
+
+### 3. List All Ingested Knowledge Base Documents
+# @name listDocuments
+GET {{baseUrl}}/api/documents?skip=0&limit=20
+Accept: application/json
+
+### 4. Explicit Trigger to Process / Ingest Existing Document Chunks
+# @name processDocument
+POST {{baseUrl}}/api/documents/{{documentId}}/process
+Accept: application/json
+
+### 5. Document Validation Failure Scenario: Unsupported File Extension
+POST {{baseUrl}}/api/documents
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="malicious_payload.exe"
+Content-Type: application/octet-stream
+
+BinaryExecutableContent
+--WebAppBoundary--
+
+### 6. Delete Document & Purge from Vector Index
+# @name deleteDocument
+DELETE {{baseUrl}}/api/documents/{{documentId}}
+Accept: application/json

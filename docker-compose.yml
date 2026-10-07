@@ -3,49 +3,69 @@ version: '3.8'
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: ollama
+    container_name: rag-ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: rag-backend
     ports:
       - "8000:8000"
     environment:
+      - ENVIRONMENT=production
       - HOST=0.0.0.0
       - PORT=8000
       - OLLAMA_BASE_URL=http://ollama:11434/v1
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=llama3.2
       - OLLAMA_EMBED_MODEL=nomic-embed-text
-    env_file:
-      - ./backend/.env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - CHROMA_DB_PATH=/app/chroma_db
+      - DATABASE_URL=sqlite:////app/chatbot.db
     volumes:
-      - ./backend:/app
-      - /app/.venv
+      - backend_data:/app/chroma_db
+      - sqlite_data:/app
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: rag-frontend
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/node_modules/.vite
+      - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   ollama_data:
-
+  backend_data:
+  sqlite_data:

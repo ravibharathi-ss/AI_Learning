@@ -2,19 +2,12 @@ import React, { useState } from 'react';
 import {
   MessageSquare,
   BookOpen,
-  Search,
-  AlertTriangle,
-  Scale,
-  Zap,
-  Cpu,
-  ShieldAlert,
   ChevronLeft,
   ChevronRight,
   Plus,
   Trash2,
   Bot,
-  ShieldCheck,
-  Users
+  ShieldCheck
 } from 'lucide-react';
 
 interface Conversation {
@@ -25,8 +18,8 @@ interface Conversation {
 }
 
 interface SidebarProps {
-  currentView: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent';
-  setCurrentView: (view: 'chat' | 'kb' | 'debugger' | 'error_analysis' | 'judge_eval' | 'agent_loops' | 'agent_evals' | 'mcp_hub' | 'multi_agent') => void;
+  currentView: 'chat' | 'kb';
+  setCurrentView: (view: 'chat' | 'kb') => void;
   conversations: Conversation[];
   activeConvId: string | null;
   onSelectConversation: (id: string) => void;
@@ -50,64 +43,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     {
       id: 'chat' as const,
-      label: 'Live Chat',
+      label: 'Legal Assistant',
       icon: MessageSquare,
-      title: 'Live Customer Support Chat'
+      title: 'Legal Contract Intelligence & Chat'
     },
     {
       id: 'kb' as const,
-      label: 'Knowledge Base',
+      label: 'Contracts & Documents',
       icon: BookOpen,
-      title: 'RAG Vector Store Knowledge Base'
-    },
-    {
-      id: 'debugger' as const,
-      label: 'RAG Debugger',
-      badge: 'W4',
-      icon: Search,
-      title: 'Week 4 Hybrid Retrieval & Chunk Debugger'
-    },
-    {
-      id: 'error_analysis' as const,
-      label: 'Error Analysis',
-      badge: 'W5',
-      icon: AlertTriangle,
-      title: 'Week 5 Failure Taxonomy & Tracing'
-    },
-    {
-      id: 'judge_eval' as const,
-      label: 'Legal Judge',
-      badge: 'W6',
-      icon: Scale,
-      title: 'Week 6 Legal Contract Clause Judge Validation'
-    },
-    {
-      id: 'agent_loops' as const,
-      label: 'Agent Loops',
-      badge: 'W7',
-      icon: Zap,
-      title: 'Week 7 Agent vs Fixed Workflow Benchmark Race'
-    },
-    {
-      id: 'agent_evals' as const,
-      label: 'Agent Security',
-      badge: 'W8',
-      icon: ShieldAlert,
-      title: 'Week 8 Agent Failure Modes & Security'
-    },
-    {
-      id: 'mcp_hub' as const,
-      label: 'MCP Studio',
-      badge: 'W9',
-      icon: Cpu,
-      title: 'Week 9 MCP & Multi-Agent Studio'
-    },
-    {
-      id: 'multi_agent' as const,
-      label: 'Multi-Agent',
-      badge: 'W10',
-      icon: Users,
-      title: 'Week 10 Multi-Agent Squad & A2A Race'
+      title: 'Knowledge Base Contracts & Documents'
     }
   ];
 
@@ -121,10 +65,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           {!collapsed && (
             <div className="sidebar-brand-info">
-              <h1 className="sidebar-brand-title">AI Master Agent</h1>
+              <h1 className="sidebar-brand-title">Legal RAG Intelligence</h1>
               <div className="sidebar-brand-status">
                 <span className="status-dot-pulse"></span>
-                <span>{backendHealth?.status === 'healthy' ? 'Ollama Active' : 'Online'}</span>
+                <span>{backendHealth?.status === 'healthy' ? 'Platform Online' : 'Active'}</span>
               </div>
             </div>
           )}
@@ -141,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Modules Section */}
       <div className="sidebar-content">
-        {!collapsed && <div className="sidebar-section-title">Core Engine Modules</div>}
+        {!collapsed && <div className="sidebar-section-title">Navigation</div>}
         <div className="nav-group">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -157,11 +101,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <Icon size={18} className="nav-item-icon" />
                   {!collapsed && <span className="nav-item-text">{item.label}</span>}
                 </div>
-                {!collapsed && item.badge && (
-                  <span className={`nav-badge badge-${item.badge.toLowerCase()}`}>
-                    {item.badge}
-                  </span>
-                )}
               </button>
             );
           })}
@@ -192,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <MessageSquare size={14} className="conv-item-icon" />
                     {!collapsed && (
                       <span className="conv-item-text">
-                        {conv.title || 'New Chat Session'}
+                        {conv.title || 'Legal Inquiries'}
                       </span>
                     )}
                   </div>
@@ -217,12 +156,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="sidebar-footer-content">
           <div className="footer-status-row">
             <ShieldCheck size={14} className="footer-status-icon" />
-            {!collapsed && <span>Agent Evals Active</span>}
+            {!collapsed && <span>Enterprise Security</span>}
           </div>
-          {!collapsed && <div className="footer-subtext">Tracks A-F Trajectory Alignment</div>}
+          {!collapsed && <div className="footer-subtext">Grounded RAG & Citations</div>}
         </div>
       </div>
     </aside>
   );
 };
-

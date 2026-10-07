@@ -6,8 +6,8 @@
     "protocol": "Blind Hand-Labeling Protocol",
     "timestamp": "2026-08-28T17:28:00Z",
     "hand_labeled_by": "Legal Reviewer / Human Evaluator",
-    "total_cases": 26,
-    "regression_cases_count": 2,
+    "total_cases": 27,
+    "regression_cases_count": 3,
     "taxonomy_modes": [
       "Hallucination / Fact Distortion",
       "Context Ignoring / Misleading Advice",
@@ -304,6 +304,18 @@
       "model_answer": "Disputes are arbitrated under the American Arbitration Association (AAA) rules in Singapore in the French language.",
       "human_verdict": "FAIL",
       "human_rationale": "Complete fabrication of forum, institution, and language. Section 15 requires ICC in London in English."
+    },
+    {
+      "id": "CASE-027",
+      "taxonomy_mode": "Context Ignoring / Misleading Advice",
+      "is_regression": true,
+      "regression_source": "Trace trace-w11-plant-7f89b2 (Thursday Lawyer Termination Citation Complaint)",
+      "contract_title": "Master Services Agreement (Cloud Infrastructure 2026)",
+      "contract_context": "Section 12.2 Termination for Cause / Material Breach: Either Party may terminate this Agreement immediately upon written notice if the other Party commits a material breach and fails to cure within thirty (30) calendar days after written notice. Section 12.3 Termination for Convenience: Customer may terminate this Agreement or any active Service Order for convenience without cause at any time upon providing at least sixty (60) days prior written notice to Provider. Section 14.1 Assignment and Sublicensing: Neither Party may assign or transfer this Agreement without prior written consent.",
+      "query": "What is the notice period and procedure for terminating our Cloud Master Services Agreement for convenience?",
+      "model_answer": "Under Section 14.2 of the agreement, either party may terminate for convenience upon thirty (30) days prior written notice, provided that Customer remains liable for all prepaid, non-refundable subscription fees.",
+      "human_verdict": "FAIL",
+      "human_rationale": "Cites Section 14.2 instead of Section 12.3 (Termination for Convenience), and states 30 days notice instead of the required 60 days notice. Fails clause citation accuracy and notice period truthfulness."
     }
   ]
 }

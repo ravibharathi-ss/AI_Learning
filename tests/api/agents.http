@@ -1,0 +1,66 @@
+### Enterprise Multi-Agent & Orchestration API
+@baseUrl = http://localhost:8000
+
+### 1. Discover Registered Agent Cards & Squad Roles
+# @name getAgentCards
+GET {{baseUrl}}/api/agent/cards
+Accept: application/json
+
+### 2. Execute Single Specialized Agent
+# @name runSingleAgent
+POST {{baseUrl}}/api/agent/run
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "Review governing law and liability caps under the Master Services Agreement.",
+  "track_code": "F"
+}
+
+### 3. Run Benchmark Race: Agent Loop vs Fixed Workflow
+# @name runAgentRace
+POST {{baseUrl}}/api/agent/race
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "Verify termination for convenience notice requirements.",
+  "track_code": "F"
+}
+
+### 4. Execute Multi-Agent Squad (Manager + Specialists)
+# @name runMultiAgentSquad
+POST {{baseUrl}}/api/multi-agent/squad-run
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "Cross-check GDPR Data Processing Addendum against standard clauses.",
+  "track_code": "F"
+}
+
+### 5. Simulate Agent-to-Agent (A2A) Task Lifecycle (Success Scenario)
+# @name simulateA2ATaskSuccess
+POST {{baseUrl}}/api/a2a/task/simulate
+Content-Type: application/json
+Accept: application/json
+
+{
+  "action": "create",
+  "task_id": "task-compliance-001",
+  "track_code": "F",
+  "simulate_failure": false
+}
+
+### 6. Simulate Agent-to-Agent (A2A) Task Lifecycle (Failure & Retry Scenario)
+# @name simulateA2ATaskFailure
+POST {{baseUrl}}/api/a2a/task/simulate
+Content-Type: application/json
+Accept: application/json
+
+{
+  "action": "create",
+  "task_id": "task-compliance-err-002",
+  "track_code": "F",
+  "simulate_failure": true
+}

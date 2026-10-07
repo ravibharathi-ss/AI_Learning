@@ -1,0 +1,37 @@
+### Grounded Legal Contract Evaluation & Judge API
+@baseUrl = http://localhost:8000
+
+### 1. Trigger Full Automated Contract Evaluation Suite
+# Evaluates clause citations, deterministic assertions, and faithfulness.
+# @name runEvalSuite
+POST {{baseUrl}}/api/eval/run
+Content-Type: application/json
+Accept: application/json
+
+### 2. Fetch Aggregated Evaluation Summary & Calibration Metrics
+# @name getEvalSummary
+GET {{baseUrl}}/api/eval/summary
+Accept: application/json
+
+### 3. Inspect RAG Context, Embeddings & Reranking Scores for Query
+# @name inspectRagQuery
+POST {{baseUrl}}/api/rag/inspect
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "What is the notice period for terminating for convenience under Section 12.3?",
+  "top_k": 3
+}
+
+### 4. Evaluate Query Against Grounded Contract Gold Labels
+# @name evaluateRagQuery
+POST {{baseUrl}}/api/rag/evaluate
+Content-Type: application/json
+Accept: application/json
+
+{
+  "query": "What is the governing law under Section 15.1?",
+  "expected_clause": "Section 15.1",
+  "expected_answer_snippet": "Delaware"
+}
