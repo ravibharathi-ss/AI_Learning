@@ -10,7 +10,7 @@ from domain.interfaces.document_repository import IDocumentRepository
 from domain.interfaces.vector_store import IVectorStore, VectorRecord
 from domain.interfaces.embedding_service import IEmbeddingService
 from domain.exceptions.domain_exceptions import InvalidDocumentException
-from infrastructure.document_processing.pdf_parser import PdfDocumentParser
+from infrastructure.document_processing.multi_format_loader import MultiFormatDocumentLoader
 from infrastructure.document_processing.text_chunker import TextChunker
 from infrastructure.observability.structured_logger import logger
 from application.dtos.document_dtos import ProcessDocumentResponse
@@ -21,8 +21,8 @@ class IngestDocumentUseCase:
         doc_repo: IDocumentRepository,
         vector_store: IVectorStore,
         embedding_service: IEmbeddingService,
-        chunk_size: int = 500,
-        chunk_overlap: int = 100
+        chunk_size: int = 750,
+        chunk_overlap: int = 150
     ):
         self.doc_repo = doc_repo
         self.vector_store = vector_store
@@ -55,10 +55,12 @@ class IngestDocumentUseCase:
             )
             doc = self.doc_repo.save(doc)
 
-        # 2. Extract Text
+        # 2. Extract Text & Metadata using MultiFormatDocumentLoader
         try:
             self.doc_repo.update_status(doc.id, DocumentStatus.PROCESSING)
-            text_content = PdfDocumentParser.parse_pdf(file_bytes)
+            loaded_doc = MultiFormatDocumentLoader.load_from_bytes(filename, file_bytes)
+            text_content = loaded_doc.text
+            doc_metadata = loaded_doc.metadata
         except Exception as e:
             self.doc_repo.update_status(doc.id, DocumentStatus.FAILED, str(e))
             logger.log_event(
@@ -89,13 +91,21 @@ class IngestDocumentUseCase:
         embeddings = self.embedding_service.generate_embeddings_batch(texts_to_embed)
 
         for i, (c_res, emb) in enumerate(zip(chunk_results, embeddings)):
+            chunk_meta = {
+                "clause_reference": c_res.clause_reference,
+                "source_doc": doc_metadata.get("source_doc"),
+                "counterparty": doc_metadata.get("counterparty"),
+                "effective_date": doc_metadata.get("effective_date"),
+                "doc_type": doc_metadata.get("doc_type"),
+                "is_controlling": doc_metadata.get("is_controlling", False)
+            }
             chunk_entity = DocumentChunkEntity(
                 id=None,
                 document_id=doc.id,
                 content=c_res.content,
                 chunk_index=i,
                 embedding=emb,
-                metadata={"clause_reference": c_res.clause_reference}
+                metadata=chunk_meta
             )
             chunk_entities.append(chunk_entity)
 
@@ -109,10 +119,15 @@ class IngestDocumentUseCase:
                 vector=emb,
                 document_text=sc.content,
                 metadata={
-                    "document_id": doc.id,
-                    "filename": filename,
-                    "chunk_id": sc.id,
-                    "clause_reference": sc.metadata.get("clause_reference")
+                    "document_id": str(doc.id),
+                    "filename": str(filename),
+                    "chunk_id": int(sc.id) if sc.id is not None else 0,
+                    "clause_reference": str(sc.metadata.get("clause_reference") or ""),
+                    "source_doc": str(sc.metadata.get("source_doc") or ""),
+                    "counterparty": str(sc.metadata.get("counterparty") or ""),
+                    "effective_date": str(sc.metadata.get("effective_date") or ""),
+                    "doc_type": str(sc.metadata.get("doc_type") or ""),
+                    "is_controlling": bool(sc.metadata.get("is_controlling", False))
                 }
             ))
         self.vector_store.upsert(vector_records)

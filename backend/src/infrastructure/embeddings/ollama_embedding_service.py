@@ -25,26 +25,31 @@ class OllamaEmbeddingService(IEmbeddingService):
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        url = f"{self.host}/api/embed"
-        payload = {"model": self.model, "input": text, "keep_alive": "10m"}
+        hosts_to_try = [self.host]
+        for alt in ["http://127.0.0.1:11434", "http://localhost:11434"]:
+            if alt not in hosts_to_try:
+                hosts_to_try.append(alt)
 
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                res_json = json.loads(response.read().decode("utf-8"))
-                embeddings = res_json.get("embeddings", [])
-                if embeddings and len(embeddings) > 0:
-                    vec = embeddings[0]
-                    self._cache[cache_key] = vec
-                    return vec
-        except Exception as e:
-            # Fallback to deterministic pseudo-embedding to keep offline RAG operative
-            pass
+        for candidate_host in hosts_to_try:
+            url = f"{candidate_host}/api/embed"
+            payload = {"model": self.model, "input": text, "keep_alive": "10m"}
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=self.timeout) as response:
+                    res_json = json.loads(response.read().decode("utf-8"))
+                    embeddings = res_json.get("embeddings", [])
+                    if embeddings and len(embeddings) > 0:
+                        vec = embeddings[0]
+                        self._cache[cache_key] = vec
+                        self.host = candidate_host
+                        return vec
+            except Exception:
+                continue
 
         return self._fallback_pseudo_embedding(text)
 

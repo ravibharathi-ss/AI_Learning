@@ -29,7 +29,7 @@ class RagSettings(BaseSettings):
     
     # Retrieval Configuration
     top_k: int = Field(default=3, env="RAG_TOP_K")
-    similarity_threshold: float = Field(default=0.20, env="RAG_SIMILARITY_THRESHOLD")
+    similarity_threshold: float = Field(default=0.50, env="RAG_SIMILARITY_THRESHOLD")
     enable_reranking: bool = Field(default=True, env="RAG_ENABLE_RERANKING")
     enable_bm25_hybrid: bool = Field(default=True, env="RAG_ENABLE_BM25_HYBRID")
 
@@ -38,7 +38,7 @@ class EmbeddingSettings(BaseSettings):
 
     provider: str = Field(default="ollama", env="EMBEDDING_PROVIDER")
     model: str = Field(default="nomic-embed-text", env="OLLAMA_EMBED_MODEL")
-    ollama_host: str = Field(default="http://host.docker.internal:11434", env="OLLAMA_HOST")
+    ollama_host: str = Field(default="http://127.0.0.1:11434", env="OLLAMA_HOST")
     timeout_seconds: float = Field(default=15.0, env="EMBEDDING_TIMEOUT")
 
 class LlmSettings(BaseSettings):
@@ -46,7 +46,7 @@ class LlmSettings(BaseSettings):
 
     provider: str = Field(default="ollama", env="LLM_PROVIDER")
     model: str = Field(default="llama3.2", env="OLLAMA_MODEL")
-    ollama_base_url: str = Field(default="http://host.docker.internal:11434/v1", env="OLLAMA_BASE_URL")
+    ollama_base_url: str = Field(default="http://127.0.0.1:11434/v1", env="OLLAMA_BASE_URL")
     temperature: float = Field(default=0.2, env="LLM_TEMPERATURE")
     max_tokens: int = Field(default=512, env="LLM_MAX_TOKENS")
     timeout_seconds: float = Field(default=30.0, env="LLM_TIMEOUT")

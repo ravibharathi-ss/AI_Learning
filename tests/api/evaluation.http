@@ -24,14 +24,27 @@ Accept: application/json
   "top_k": 3
 }
 
-### 4. Evaluate Query Against Grounded Contract Gold Labels
-# @name evaluateRagQuery
-POST {{baseUrl}}/api/rag/evaluate
-Content-Type: application/json
+### 5. Inspect Golden Set 32 Cases & Metadata
+# @name getGoldenSetCases
+GET {{baseUrl}}/api/evaluation/golden-set/cases
 Accept: application/json
 
-{
-  "query": "What is the governing law under Section 15.1?",
-  "expected_clause": "Section 15.1",
-  "expected_answer_snippet": "Delaware"
-}
+### 6. Run Full Golden Set Evaluation (32 Cases)
+# @name runGoldenSetEvaluation
+POST {{baseUrl}}/api/evaluation/golden-set/run
+Accept: application/json
+
+### 7. Run Golden Set Single Case (e.g. GS-005 Amendment Supersession)
+# @name runGoldenSetSingleCase
+POST {{baseUrl}}/api/evaluation/golden-set/run?case_id=GS-005
+Accept: application/json
+
+### 8. Run Golden Set Counterparty Disambiguation (GS-006 Vertex)
+# @name runGoldenSetVertexDisambiguation
+POST {{baseUrl}}/api/evaluation/golden-set/run?case_id=GS-006
+Accept: application/json
+
+### 9. Run Golden Set Out-of-Scope Refusal (GS-029 Apex)
+# @name runGoldenSetApexRefusal
+POST {{baseUrl}}/api/evaluation/golden-set/run?case_id=GS-029
+Accept: application/json

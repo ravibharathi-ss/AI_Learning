@@ -24,7 +24,7 @@ class TextChunker:
     - Falls back to fixed character windows with overlap
     - Extracts inline clause headings (e.g. 'Section 12.3', 'Article 6')
     """
-    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 100):
+    def __init__(self, chunk_size: int = 750, chunk_overlap: int = 150):
         if chunk_overlap >= chunk_size:
             raise ValueError("chunk_overlap must be strictly less than chunk_size")
         self.chunk_size = chunk_size
@@ -32,8 +32,16 @@ class TextChunker:
 
     @staticmethod
     def _extract_clause_tag(text: str) -> str | None:
-        pattern = r'\b(?:Section|Clause|Article)\s+\d+(?:\.\d+)?\b'
-        match = re.search(pattern, text, re.IGNORECASE)
+        # Check headings first (e.g. # Schedule A, ## Section 8.3, ### Part 2)
+        heading_match = re.search(r'#+\s*([^\n\r]+)', text)
+        if heading_match:
+            h_text = heading_match.group(1).strip()
+            if re.search(r'\b(?:Section|Clause|Article|Schedule|Part|Amendment|Exhibit|§)\b', h_text, re.I):
+                return h_text
+
+        # Check explicit section / schedule / clause tags
+        pattern = r'\b(?:Section|Clause|Article|Schedule|Exhibit)\s+[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?(?:\s+Part\s+\d+)?(?:\.\d+)?\b|§\s*\d+(?:\.\d+)?|\bAmendment\s+No\.\s*\d+\b'
+        match = re.search(pattern, text, re.I)
         return match.group(0) if match else None
 
     def chunk(self, text: str) -> List[ChunkResult]:

@@ -8,6 +8,7 @@ class CitationDto(BaseModel):
     score: float
     snippet: str
     clause_reference: Optional[str] = None
+    source_doc: Optional[str] = None
 
 class ChatRequestDto(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="User question")

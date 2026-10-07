@@ -61,12 +61,45 @@ Every capability is isolated behind clear service abstractions and domain interf
 | :--- | :--- | :--- | :--- | :--- |
 | **RAG & Grounded Q&A** | `ILLMService`, `IEmbeddingService` | `ChatRagUseCase` | `POST /api/chat` | `tests/api/test_api_chat_rag.py` |
 | **Retrieval & Search** | `IVectorStore` | `ChromaVectorStore`, `SearchUseCase` | `POST /api/search` | `tests/api/test_api_search.py`, `tests/unit/test_retrieval_ranking.py` |
-| **Document Ingestion** | `IDocumentRepository` | `IngestDocumentUseCase`, `PdfDocumentParser` | `POST /api/documents` | `tests/api/test_api_documents.py`, `tests/integration/test_document_ingestion_pipeline.py` |
+| **Document Ingestion** | `IDocumentRepository` | `IngestDocumentUseCase`, `MultiFormatDocumentLoader` | `POST /api/documents` | `tests/api/test_api_documents.py`, `tests/integration/test_document_ingestion_pipeline.py` |
+| **Golden Set Evaluation** | `GoldenSetEvaluator` | `GoldenSetEvaluator` (32 Cases) | `POST /api/evaluation/golden-set/run` | `tests/api/test_api_shared_corpus_evaluation.py` |
 | **Document Chunking** | *Domain Boundary* | `TextChunker` | Internal / Use Case | `tests/unit/test_chunking.py` |
 | **Security Guardrails**| *Domain Security* | `SecurityGuardrails` | Pre-execution hook | `tests/unit/test_security_guardrails.py` |
 | **Contracts & Canary** | `ContractBusinessRules` | `CanaryRouter` | `POST /api/contracts/query` | `tests/api/test_api_chat_rag.py` |
 | **Multi-Agent Squads** | `IAgentService` | `MultiAgentService` | `POST /api/agent/run` | `tests/test_multi_agent.py` |
 | **Model Context Protocol**| *Tool Socket* | `McpService` | `POST /api/mcp/tools/call` | `tests/test_multi_agent.py` |
+
+---
+
+## 📜 Standard Shared Legal Contract Corpus & Golden Set (v1.0)
+
+The application evaluates against the standard shared legal contract corpus (`shared-corpus/`) containing 6 canonical contracts with full format parity (`.md`, `.docx`, `.pdf`):
+
+- `MSA-2026-014`: Northwind Logistics Master Services Agreement (Original Agreement, 14 Jan 2026)
+- `AMD-2026-014-01`: Northwind Amendment No. 1 (Effective 1 Apr 2026 — 45-day Payment Terms, 45-day Cure Period, 10% Service Credit Cap, Audit twice/year)
+- `AMD-2026-014-02`: Northwind Amendment No. 2 (Controlling Amendment, Effective 1 Aug 2026 — 15 Business Days Termination Notice, USD 5M Liability Cap, 15 BD Breach Notice, 7-year Confidentiality Survival, India Data Residency)
+- `SCH-2026-014`: Northwind Schedules (Schedule A Services, Schedule B Service Levels, Schedule B-2 Escalation Matrix, Schedule C 2026/2027 Holiday Calendar)
+- `MSA-2026-022`: Vertex Retail Master Services Agreement (Disambiguation Target — USD 500k Cap, 20-day Cure Period, Singapore SIAC Arbitration, No Amendments)
+- `NDA-2026-007`: Halcyon Analytics Mutual Non-Disclosure Agreement (EUR 50k Cap, 3-year Confidentiality Survival)
+
+### Ingesting & Evaluating Corpus
+
+```bash
+# Ingest all 6 canonical contracts with table preservation & metadata tagging
+python scripts/ingest_shared_corpus.py
+
+# Run complete 32-case Golden Set evaluation
+python scripts/evaluate_golden_set.py
+
+# Run specific case or limited subset
+python scripts/evaluate_golden_set.py --case GS-005
+python scripts/evaluate_golden_set.py --limit 5
+```
+
+### Golden Set API Endpoints
+
+- `GET /api/evaluation/golden-set/cases`: Inspect all 32 ground-truth test cases and expected values.
+- `POST /api/evaluation/golden-set/run`: Execute the automated evaluation run across all cases or a specific `?case_id=GS-XXX`.
 
 ---
 

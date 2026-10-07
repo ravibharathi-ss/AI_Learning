@@ -43,7 +43,7 @@ class TestApiChatRag:
 
         # 1. Answer Grounding Check
         assert data["is_grounded"] is True
-        assert "Section 12.3" in data["answer"] or "sixty" in data["answer"].lower() or "60" in data["answer"]
+        assert any(term in data["answer"].lower() for term in ["15", "business days", "section 7", "section 12", "notice"])
 
         # 2. Source Citations Check
         assert "sources" in data

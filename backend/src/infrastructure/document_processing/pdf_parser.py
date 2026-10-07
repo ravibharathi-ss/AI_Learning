@@ -24,6 +24,41 @@ class PdfDocumentParser:
             except UnicodeDecodeError:
                 raise InvalidDocumentException("Invalid document header: expected PDF magic bytes (%PDF-).")
 
+        # 1. Try pdfplumber for table-aware parsing
+        try:
+            import pdfplumber
+            parts = []
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                if len(pdf.pages) == 0:
+                    raise InvalidDocumentException("PDF document contains 0 pages.")
+                for page in pdf.pages:
+                    extracted = page.extract_tables() or []
+                    body = page
+                    if extracted:
+                        for tbl_obj in page.find_tables():
+                            body = body.outside_bbox(tbl_obj.bbox)
+                    parts.append(body.extract_text() or "")
+                    for tbl in extracted:
+                        rows = [[(c or "").strip().replace("\n", " ") for c in r] for r in tbl if r]
+                        if len(rows) >= 2:
+                            header = rows[0]
+                            out = ["[TABLE] " + " | ".join(h for h in header if h)]
+                            for row in rows[1:]:
+                                pairs = [
+                                    f"{header[i]}: {cell}" if i < len(header) and header[i] else cell
+                                    for i, cell in enumerate(row)
+                                    if cell
+                                ]
+                                if pairs:
+                                    out.append("  " + " | ".join(pairs))
+                            parts.append("\n".join(out))
+            full_text = "\n\n".join(p for p in parts if p.strip())
+            if full_text.strip():
+                return full_text
+        except Exception:
+            pass
+
+        # 2. Fallback to pypdf
         try:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(file_bytes))

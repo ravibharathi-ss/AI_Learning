@@ -49,6 +49,7 @@ from api.routers.search import router as search_router
 from api.routers.chat import router as chat_router
 from api.routers.traces import router as traces_router
 from api.routers.contracts import router as contracts_router
+from api.routers.evaluation import router as evaluation_router
 
 app.include_router(health_router)
 app.include_router(documents_router)
@@ -56,6 +57,7 @@ app.include_router(search_router)
 app.include_router(chat_router)
 app.include_router(traces_router)
 app.include_router(contracts_router)
+app.include_router(evaluation_router)
 
 if __name__ == "__main__":
     import uvicorn

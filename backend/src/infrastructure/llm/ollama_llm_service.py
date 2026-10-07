@@ -23,7 +23,17 @@ class OllamaLlmService(ILLMService):
     def _get_client(self):
         if self._client is None:
             from openai import OpenAI
-            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key, timeout=min(self.timeout, 3.0), max_retries=0)
+            candidate_urls = [self.base_url, "http://127.0.0.1:11434/v1", "http://localhost:11434/v1"]
+            for url in candidate_urls:
+                try:
+                    import urllib.request
+                    health_url = url.replace("/v1", "")
+                    urllib.request.urlopen(health_url, timeout=1.5)
+                    self.base_url = url
+                    break
+                except Exception:
+                    continue
+            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key, timeout=self.timeout, max_retries=1)
         return self._client
 
     def generate(
@@ -48,7 +58,23 @@ class OllamaLlmService(ILLMService):
             )
             return resp.choices[0].message.content or ""
         except Exception as e:
-            # Fallback to local contextual response if external daemon is unavailable
+            # Try alternate local endpoint before falling back
+            for alt in ["http://127.0.0.1:11434/v1", "http://localhost:11434/v1"]:
+                if alt != self.base_url:
+                    try:
+                        from openai import OpenAI
+                        alt_client = OpenAI(base_url=alt, api_key=self.api_key, timeout=self.timeout, max_retries=0)
+                        resp = alt_client.chat.completions.create(
+                            model=self.model,
+                            messages=payload,
+                            temperature=temperature,
+                            max_tokens=max_tokens
+                        )
+                        self._client = alt_client
+                        self.base_url = alt
+                        return resp.choices[0].message.content or ""
+                    except Exception:
+                        pass
             return self._heuristic_fallback(payload)
 
     async def generate_stream(
