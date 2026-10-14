@@ -11,7 +11,7 @@ class OllamaLlmService(ILLMService):
         self,
         base_url: str = "http://host.docker.internal:11434/v1",
         model: str = "llama3.2",
-        timeout: float = 30.0,
+        timeout: float = 180.0,
         api_key: Optional[str] = None
     ):
         self.base_url = base_url

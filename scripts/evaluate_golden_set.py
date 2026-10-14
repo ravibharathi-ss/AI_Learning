@@ -48,7 +48,7 @@ def main():
     llm_service = OllamaLlmService(
         base_url=settings.llm.ollama_base_url,
         model=settings.llm.model,
-        timeout=settings.llm.timeout_seconds
+        timeout=180.0
     )
     chat_use_case = ChatRagUseCase(
         vector_store=vector_store,
@@ -81,8 +81,37 @@ def main():
             print(f"Notes:    {res.notes}")
         sys.exit(0)
 
+    out_dir = ROOT_DIR / "evaluation_results"
+    out_dir.mkdir(exist_ok=True)
+    out_file = out_dir / "golden_set_run_report.json"
+
+    def save_report_to_disk(rep: EvaluationReport):
+        report_dict = {
+            "total_cases": rep.total_cases,
+            "passed_cases": rep.passed_cases,
+            "accuracy_percentage": rep.accuracy_percentage,
+            "avg_latency_ms": rep.avg_latency_ms,
+            "class_breakdown": rep.class_breakdown,
+            "failure_breakdown": rep.failure_breakdown,
+            "cases": [
+                {
+                    "id": c.id,
+                    "question": c.question,
+                    "class": c.case_class,
+                    "status": c.status,
+                    "latency_ms": c.latency_ms,
+                    "actual_answer": c.actual_answer,
+                    "expected_answer": c.expected_answer,
+                    "notes": c.notes,
+                    "cited_sources": c.cited_sources
+                }
+                for c in rep.case_results
+            ]
+        }
+        out_file.write_text(json.dumps(report_dict, indent=2), encoding="utf-8")
+
     print(f"\nRunning evaluation on {'all 32' if not args.limit else args.limit} test cases...")
-    report: EvaluationReport = evaluator.evaluate_all(limit=args.limit)
+    report: EvaluationReport = evaluator.evaluate_all(limit=args.limit, on_case_complete=save_report_to_disk)
 
     print("\n" + "=" * 75)
     print("EVALUATION SUMMARY RESULTS")
@@ -104,34 +133,7 @@ def main():
         for f_type, count in report.failure_breakdown.items():
             print(f"  - {f_type}: {count}")
 
-    # Save detailed JSON report
-    out_dir = ROOT_DIR / "evaluation_results"
-    out_dir.mkdir(exist_ok=True)
-    out_file = out_dir / "golden_set_run_report.json"
-    
-    report_dict = {
-        "total_cases": report.total_cases,
-        "passed_cases": report.passed_cases,
-        "accuracy_percentage": report.accuracy_percentage,
-        "avg_latency_ms": report.avg_latency_ms,
-        "class_breakdown": report.class_breakdown,
-        "failure_breakdown": report.failure_breakdown,
-        "cases": [
-            {
-                "id": c.id,
-                "question": c.question,
-                "class": c.case_class,
-                "status": c.status,
-                "latency_ms": c.latency_ms,
-                "actual_answer": c.actual_answer,
-                "expected_answer": c.expected_answer,
-                "notes": c.notes,
-                "cited_sources": c.cited_sources
-            }
-            for c in report.case_results
-        ]
-    }
-    out_file.write_text(json.dumps(report_dict, indent=2), encoding="utf-8")
+    save_report_to_disk(report)
     print(f"\nDetailed evaluation report saved to: {out_file}")
     print("=" * 75)
 

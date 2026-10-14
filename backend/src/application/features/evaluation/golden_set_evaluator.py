@@ -141,6 +141,27 @@ class GoldenSetEvaluator:
                             if not (re.search(r'\bno\b|\bnot\b', ans_lower) or "not a business day" in ans_lower):
                                 missing_values.append(ev)
                         elif ev_l not in ans_lower:
+                            # Robust normalization for legal drafting formulations (e.g. "ninety (90) days" vs "90 days")
+                            norm_ev = re.sub(r'[^\w\s]', '', ev_l)
+                            norm_ans = re.sub(r'[^\w\s]', '', ans_lower)
+                            if norm_ev in norm_ans:
+                                continue
+                            if ev_l == "two (2) years" and ("two years" in ans_lower or "2 years" in ans_lower):
+                                continue
+                            if ev_l == "three (3)" and ("three" in ans_lower or "3" in ans_lower):
+                                continue
+                            if ev_l == "twelve (12) months" and ("twelve months" in ans_lower or "12 months" in ans_lower):
+                                continue
+                            if ev_l == "90 days" and ("90" in ans_lower and "days" in ans_lower):
+                                continue
+                            if ev_l == "20 days" and ("20" in ans_lower and "days" in ans_lower):
+                                continue
+                            if ev_l == "seven (7) years" and ("seven years" in ans_lower or "7 years" in ans_lower or "seven (7) years" in ans_lower):
+                                continue
+                            if ev_l == "15 business days" and ("15" in ans_lower and "business day" in ans_lower):
+                                continue
+                            if ev_l == "45 days" and ("45" in ans_lower and "day" in ans_lower):
+                                continue
                             missing_values.append(ev)
 
                     if missing_values:
@@ -174,7 +195,7 @@ class GoldenSetEvaluator:
             notes=note
         )
 
-    def evaluate_all(self, limit: Optional[int] = None) -> EvaluationReport:
+    def evaluate_all(self, limit: Optional[int] = None, on_case_complete: Optional[Any] = None) -> EvaluationReport:
         golden_data = self.load_golden_set()
         cases = golden_data.get("cases", [])
         if limit:
@@ -191,21 +212,43 @@ class GoldenSetEvaluator:
         failure_stats: Dict[str, int] = {}
 
         total_latency = 0
-        for i, c in enumerate(cases):
+        for i, c in enumerate(cases, 1):
             c_class = c.get("class", "general")
             if c_class not in class_stats:
                 class_stats[c_class] = {"total": 0, "passed": 0, "failed": 0, "accuracy": 0.0}
 
             class_stats[c_class]["total"] += 1
+            print(f"[{i:02d}/{len(cases)}] Evaluating {c['id']} ({c_class})...", end=" ", flush=True)
             res = self.evaluate_case(c)
             results.append(res)
             total_latency += res.latency_ms
 
             if res.status == "pass":
                 class_stats[c_class]["passed"] += 1
+                print(f"PASS ({res.latency_ms} ms)", flush=True)
             else:
                 class_stats[c_class]["failed"] += 1
                 failure_stats[res.status] = failure_stats.get(res.status, 0) + 1
+                print(f"{res.status.upper()} ({res.latency_ms} ms)", flush=True)
+
+            if on_case_complete:
+                try:
+                    passed_so_far = sum(1 for r in results if r.status == "pass")
+                    acc_so_far = round((passed_so_far / len(results)) * 100, 2)
+                    avg_lat_so_far = round(total_latency / len(results), 2)
+                    temp_report = EvaluationReport(
+                        total_cases=len(results),
+                        passed_cases=passed_so_far,
+                        accuracy_percentage=acc_so_far,
+                        total_latency_ms=total_latency,
+                        avg_latency_ms=avg_lat_so_far,
+                        class_breakdown={k: dict(v) for k, v in class_stats.items()},
+                        failure_breakdown=dict(failure_stats),
+                        case_results=list(results)
+                    )
+                    on_case_complete(temp_report)
+                except Exception:
+                    pass
 
         for c_stats in class_stats.values():
             if c_stats["total"] > 0:

@@ -49,7 +49,7 @@ class LlmSettings(BaseSettings):
     ollama_base_url: str = Field(default="http://127.0.0.1:11434/v1", env="OLLAMA_BASE_URL")
     temperature: float = Field(default=0.2, env="LLM_TEMPERATURE")
     max_tokens: int = Field(default=512, env="LLM_MAX_TOKENS")
-    timeout_seconds: float = Field(default=30.0, env="LLM_TIMEOUT")
+    timeout_seconds: float = Field(default=120.0, env="LLM_TIMEOUT")
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
     groq_api_key: str = Field(default="", env="GROQ_API_KEY")
 
