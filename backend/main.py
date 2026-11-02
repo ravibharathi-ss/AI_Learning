@@ -2,7 +2,7 @@ import os
 import uvicorn
 import json
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
@@ -52,36 +52,64 @@ rag_service = RagService()
 def health_check():
     return {"status": "healthy", "mode": "ollama", "model": ollama_service.model_name}
 
-# 1. Create a new conversation
+# 1. Create a new conversation (Session-Isolated)
 @app.post("/api/conversations", response_model=schemas.ConversationResponse, status_code=status.HTTP_201_CREATED)
-def create_conversation(conv_in: schemas.ConversationCreate, db: Session = Depends(get_db)):
+def create_conversation(
+    conv_in: schemas.ConversationCreate, 
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    db: Session = Depends(get_db)
+):
     db_conv = models.Conversation(
-        title=conv_in.title,
-        agent_type=conv_in.agent_type
+        title=conv_in.title or "New Chat Session",
+        agent_type=conv_in.agent_type,
+        session_id=x_session_id
     )
     db.add(db_conv)
     db.commit()
     db.refresh(db_conv)
     return db_conv
 
-# 2. Get list of conversation history (without message payloads for light payload)
+# 2. Get list of conversation history (Session-Isolated: Users only see their own chats)
 @app.get("/api/conversations", response_model=List[schemas.ConversationListItem])
-def get_conversations(db: Session = Depends(get_db)):
-    conversations = db.query(models.Conversation).order_by(models.Conversation.created_at.desc()).all()
+def get_conversations(
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Conversation)
+    if x_session_id:
+        query = query.filter(models.Conversation.session_id == x_session_id)
+    else:
+        # If no session ID provided, only show unassigned/legacy conversations
+        query = query.filter(models.Conversation.session_id == None)
+    conversations = query.order_by(models.Conversation.created_at.desc()).all()
     return conversations
 
-# 3. Get messages for a specific conversation
+# 3. Get messages for a specific conversation (Session-Protected)
 @app.get("/api/conversations/{conversation_id}/messages", response_model=List[schemas.MessageResponse])
-def get_conversation_messages(conversation_id: str, db: Session = Depends(get_db)):
-    conv = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
+def get_conversation_messages(
+    conversation_id: str, 
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Conversation).filter(models.Conversation.id == conversation_id)
+    if x_session_id:
+        query = query.filter((models.Conversation.session_id == x_session_id) | (models.Conversation.session_id == None))
+    conv = query.first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conv.messages
 
-# 4. Delete a conversation
+# 4. Delete a conversation (Session-Protected)
 @app.delete("/api/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
-    conv = db.query(models.Conversation).filter(models.Conversation.id == conversation_id).first()
+def delete_conversation(
+    conversation_id: str, 
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Conversation).filter(models.Conversation.id == conversation_id)
+    if x_session_id:
+        query = query.filter((models.Conversation.session_id == x_session_id) | (models.Conversation.session_id == None))
+    conv = query.first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     db.delete(conv)
@@ -255,7 +283,16 @@ def submit_feedback(message_id: int, feedback_in: schemas.FeedbackBase, db: Sess
 
 # 8. Knowledge Base / Document upload endpoints
 @app.post("/api/documents", response_model=schemas.DocumentResponse, status_code=status.HTTP_201_CREATED)
-async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_document(
+    file: UploadFile = File(...), 
+    x_admin_role: Optional[str] = Header(None, alias="X-Admin-Role"),
+    db: Session = Depends(get_db)
+):
+    if x_admin_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Document ingestion is restricted to administrators."
+        )
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in [".txt", ".md", ".json", ".pdf"]:
         raise HTTPException(
@@ -300,7 +337,16 @@ def get_documents(db: Session = Depends(get_db)):
     return documents
 
 @app.delete("/api/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_document(document_id: str, db: Session = Depends(get_db)):
+def delete_document(
+    document_id: str, 
+    x_admin_role: Optional[str] = Header(None, alias="X-Admin-Role"),
+    db: Session = Depends(get_db)
+):
+    if x_admin_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Document deletion is restricted to administrators."
+        )
     doc = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not doc:
         # Idempotent delete: if already removed, return 204 No Content so clients stay cleanly in sync

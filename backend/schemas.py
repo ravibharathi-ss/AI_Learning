@@ -38,7 +38,7 @@ class MessageResponse(MessageBase):
 
 # Conversation schemas
 class ConversationBase(BaseModel):
-    title: str
+    title: Optional[str] = "New Chat Session"
     agent_type: str = "general"
 
 class ConversationCreate(ConversationBase):

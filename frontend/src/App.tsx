@@ -15,10 +15,15 @@ import {
   Upload, 
   RefreshCw, 
   FileCheck,
-  Scale
+  Scale,
+  Menu,
+  Sparkles,
+  ShieldCheck
 } from 'lucide-react';
 
 import { Sidebar } from './components/Sidebar';
+import ThreeBackground from './components/ThreeBackground';
+import './App.css';
 
 interface Feedback {
   id?: number;
@@ -62,7 +67,76 @@ interface KnowledgeDocument {
   chunks_count?: number;
 }
 
-const API_BASE = 'http://localhost:8000/api';
+// Dynamic backend host so colleagues accessing via LAN IP (e.g., http://192.168.x.x:5173) connect properly
+const BACKEND_HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+const API_BASE = `http://${BACKEND_HOST}:8000/api`;
+const HEALTH_URL = `http://${BACKEND_HOST}:8000/health`;
+
+// ── Per-Device Session & Conversation Isolation ──
+// Ensures each friend / colleague on the local network has their own private chats
+const STORAGE_KEY_CONVS = 'rag_my_conversation_ids';
+const STORAGE_KEY_ACTIVE = 'rag_my_active_conv_id';
+
+const isHostAdmin = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const getOrCreateSessionId = (): string => {
+  try {
+    let sid = localStorage.getItem('rag_client_session_id');
+    if (!sid) {
+      sid = 'sess_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+      localStorage.setItem('rag_client_session_id', sid);
+    }
+    return sid;
+  } catch {
+    return 'sess_default';
+  }
+};
+
+const getApiHeaders = (extra: Record<string, string> = {}) => {
+  return {
+    'Content-Type': 'application/json',
+    'X-Session-ID': getOrCreateSessionId(),
+    ...(isHostAdmin ? { 'X-Admin-Role': 'admin' } : {}),
+    ...extra
+  };
+};
+
+const getMyConvIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CONVS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveMyConvId = (id: string) => {
+  try {
+    const current = getMyConvIds();
+    if (!current.includes(id)) {
+      const updated = [id, ...current];
+      localStorage.setItem(STORAGE_KEY_CONVS, JSON.stringify(updated));
+    }
+    localStorage.setItem(STORAGE_KEY_ACTIVE, id);
+  } catch (e) {
+    console.error('Failed to save conversation to localStorage:', e);
+  }
+};
+
+const removeMyConvId = (id: string) => {
+  try {
+    const current = getMyConvIds();
+    const updated = current.filter((cId) => cId !== id);
+    localStorage.setItem(STORAGE_KEY_CONVS, JSON.stringify(updated));
+    if (localStorage.getItem(STORAGE_KEY_ACTIVE) === id) {
+      localStorage.removeItem(STORAGE_KEY_ACTIVE);
+    }
+  } catch (e) {
+    console.error('Failed to remove conversation from localStorage:', e);
+  }
+};
+
+const MAX_INPUT_CHARS = 4000;
 
 export default function App() {
   // Navigation & Core State
@@ -91,6 +165,9 @@ export default function App() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [convIdToDelete, setConvIdToDelete] = useState<string | null>(null);
 
+  // Mobile sidebar toggle
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -111,7 +188,7 @@ export default function App() {
 
   const checkHealth = async () => {
     try {
-      const res = await fetch('http://localhost:8000/health');
+      const res = await fetch(HEALTH_URL);
       if (res.ok) {
         const data = await res.json();
         setBackendHealth(data);
@@ -123,13 +200,43 @@ export default function App() {
 
   const fetchConversations = async () => {
     try {
-      const res = await fetch(`${API_BASE}/conversations`);
+      const res = await fetch(`${API_BASE}/conversations`, {
+        headers: getApiHeaders()
+      });
       if (res.ok) {
-        const data = await res.json();
-        setConversations(data);
-        if (data.length > 0 && !activeConvId) {
-          setActiveConvId(data[0].id);
-          loadConversation(data[0].id);
+        const data: Conversation[] = await res.json();
+
+        // Check if this device has already tracked its conversations
+        const hasTracked = localStorage.getItem('rag_device_initialized');
+        let myIds = getMyConvIds();
+
+        // One-time initialization for the host computer (localhost):
+        // associate pre-existing conversations with the host so your history is preserved.
+        if (!hasTracked && window.location.hostname === 'localhost' && data.length > 0) {
+          myIds = data.map((c) => c.id);
+          localStorage.setItem(STORAGE_KEY_CONVS, JSON.stringify(myIds));
+          localStorage.setItem('rag_device_initialized', 'true');
+        } else if (!hasTracked) {
+          // New device / friend starts with a clean, private slate
+          localStorage.setItem('rag_device_initialized', 'true');
+        }
+
+        // Strictly filter to ONLY conversations created by THIS user / device
+        const myConversations = data.filter((c) => myIds.includes(c.id));
+        setConversations(myConversations);
+
+        // Load the stored active conversation or the newest one belonging to this device
+        const storedActiveId = localStorage.getItem(STORAGE_KEY_ACTIVE);
+        if (storedActiveId && myConversations.some((c) => c.id === storedActiveId)) {
+          setActiveConvId(storedActiveId);
+          loadConversation(storedActiveId);
+        } else if (myConversations.length > 0) {
+          setActiveConvId(myConversations[0].id);
+          loadConversation(myConversations[0].id);
+        } else {
+          // Fresh session for this friend: clean welcome screen!
+          setActiveConvId(null);
+          setMessages([]);
         }
       }
     } catch (e) {
@@ -140,11 +247,16 @@ export default function App() {
   const loadConversation = async (convId: string) => {
     setIsLoadingMessages(true);
     setActiveConvId(convId);
+    localStorage.setItem(STORAGE_KEY_ACTIVE, convId);
     try {
-      const res = await fetch(`${API_BASE}/conversations/${convId}/messages`);
+      const res = await fetch(`${API_BASE}/conversations/${convId}/messages`, {
+        headers: getApiHeaders()
+      });
       if (res.ok) {
         const data = await res.json();
-        setMessages(data);
+        // Filter out empty phantom bot placeholders so they don't render empty cards
+        const validMessages = (data || []).filter((m: Message) => !(m.sender === 'bot' && !m.content?.trim()));
+        setMessages(validMessages);
       }
     } catch (e) {
       console.error('Error loading messages:', e);
@@ -157,12 +269,13 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/conversations`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_type: 'legal_specialist' })
+        headers: getApiHeaders(),
+        body: JSON.stringify({ title: 'New Legal Session', agent_type: 'legal_specialist' })
       });
       if (res.ok) {
         const newConv = await res.json();
-        setConversations([newConv, ...conversations]);
+        saveMyConvId(newConv.id);
+        setConversations((prev) => [newConv, ...prev]);
         setActiveConvId(newConv.id);
         setMessages([]);
         setCurrentView('chat');
@@ -181,8 +294,12 @@ export default function App() {
   const confirmDeleteConversation = async () => {
     if (!convIdToDelete) return;
     try {
-      const res = await fetch(`${API_BASE}/conversations/${convIdToDelete}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/conversations/${convIdToDelete}`, {
+        method: 'DELETE',
+        headers: getApiHeaders()
+      });
       if (res.ok) {
+        removeMyConvId(convIdToDelete);
         const updated = conversations.filter((c) => c.id !== convIdToDelete);
         setConversations(updated);
         if (activeConvId === convIdToDelete) {
@@ -204,79 +321,160 @@ export default function App() {
   };
 
   const handleSendMessage = async () => {
-    if (!inputText.trim() || isGenerating) return;
+    const userQuery = inputText.trim();
+    if (!userQuery || isGenerating) return;
 
     let targetConvId = activeConvId;
     if (!targetConvId) {
       try {
+        const convTitle = userQuery.length > 36 ? userQuery.slice(0, 36) + '...' : userQuery;
         const res = await fetch(`${API_BASE}/conversations`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agent_type: 'legal_specialist' })
+          headers: getApiHeaders(),
+          body: JSON.stringify({ title: convTitle, agent_type: 'legal_specialist' })
         });
         if (res.ok) {
           const newConv = await res.json();
           targetConvId = newConv.id;
+          saveMyConvId(newConv.id);
           setActiveConvId(newConv.id);
-          setConversations([newConv, ...conversations]);
+          setConversations((prev) => [newConv, ...prev]);
         } else {
+          console.error('Failed to create new conversation:', await res.text());
           return;
         }
-      } catch {
+      } catch (err) {
+        console.error('Network error creating conversation:', err);
         return;
       }
     }
 
     if (!targetConvId) return;
 
-    const userQuery = inputText.trim();
     setInputText('');
 
+    const tempUserId = Date.now();
+    const tempBotId = tempUserId + 1;
+
+    // Display user query immediately
     const tempUserMsg: Message = {
-      id: Date.now(),
+      id: tempUserId,
       conversation_id: targetConvId,
       sender: 'user',
       content: userQuery,
       timestamp: new Date().toISOString()
     };
-    setMessages((prev) => [...prev, tempUserMsg]);
+
+    // Display live bot placeholder for animated thinking indicator
+    const tempBotMsg: Message = {
+      id: tempBotId,
+      conversation_id: targetConvId,
+      sender: 'bot',
+      content: '',
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages((prev) => [...prev, tempUserMsg, tempBotMsg]);
     setIsGenerating(true);
 
     try {
+      // 1. Post to backend to record user message & create bot message entry
       const res = await fetch(`${API_BASE}/conversations/${targetConvId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: userQuery, stream: false })
+        headers: getApiHeaders(),
+        body: JSON.stringify({ content: userQuery })
       });
 
-      if (res.ok) {
-        const botResponse = await res.json();
-        setMessages((prev) => [...prev, botResponse]);
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            conversation_id: targetConvId!,
-            sender: 'bot',
-            content: errJson.detail || 'An error occurred while generating the legal response.',
-            timestamp: new Date().toISOString()
+      if (!res.ok) {
+        throw new Error('Failed to send message to backend');
+      }
+
+      const postData = await res.json();
+      const realBotMsg = postData.bot_message;
+      const realUserMsg = postData.user_message;
+      const botMsgId = realBotMsg?.id || tempBotId;
+
+      // Update message entries with actual DB IDs
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === tempUserId && realUserMsg) return realUserMsg;
+          if (m.id === tempBotId) return { ...m, id: botMsgId };
+          return m;
+        })
+      );
+
+      // 2. Stream tokens via SSE from backend /stream endpoint
+      const streamRes = await fetch(`${API_BASE}/conversations/${targetConvId}/messages/${botMsgId}/stream`);
+      if (!streamRes.ok || !streamRes.body) {
+        throw new Error('Streaming response failed to initialize');
+      }
+
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedText = '';
+      let streamSources: Citation[] = [];
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (let line of lines) {
+          // Strip carriage return without altering trailing token spaces
+          if (line.endsWith('\r')) {
+            line = line.slice(0, -1);
           }
-        ]);
+          if (!line.startsWith('data:')) continue;
+
+          // SSE format: 'data: <payload>'. Remove only the SSE protocol prefix and preserve token spaces!
+          const dataPayload = line.startsWith('data: ') ? line.slice(6) : line.slice(5);
+          if (dataPayload === '[DONE]') {
+            break;
+          } else if (dataPayload.startsWith('[SOURCES]')) {
+            try {
+              const parsedSources = JSON.parse(dataPayload.slice(9));
+              streamSources = parsedSources;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === botMsgId ? { ...m, sources: streamSources } : m
+                )
+              );
+            } catch (err) {
+              console.error('Error parsing sources from stream:', err);
+            }
+          } else {
+            // Append incoming streamed token
+            accumulatedText += dataPayload;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === botMsgId
+                  ? {
+                      ...m,
+                      content: accumulatedText,
+                      sources: streamSources.length ? streamSources : m.sources
+                    }
+                  : m
+              )
+            );
+          }
+        }
       }
     } catch (err) {
-      console.error('Failed to send message:', err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          conversation_id: targetConvId!,
-          sender: 'bot',
-          content: 'Network connection error. Please verify backend service status.',
-          timestamp: new Date().toISOString()
-        }
-      ]);
+      console.error('Message or stream error:', err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempBotId || (m.sender === 'bot' && !m.content)
+            ? {
+                ...m,
+                content: 'I encountered an issue generating the legal response. Please check that Ollama is running and try again.'
+              }
+            : m
+        )
+      );
     } finally {
       setIsGenerating(false);
       if (textareaRef.current) {
@@ -323,6 +521,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/documents`, {
         method: 'POST',
+        headers: isHostAdmin ? { 'X-Admin-Role': 'admin' } : {},
         body: formData
       });
       if (res.ok) {
@@ -342,7 +541,10 @@ export default function App() {
   const handleDeleteDocument = async (docId: string) => {
     setDeletingDocId(docId);
     try {
-      const res = await fetch(`${API_BASE}/documents/${docId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/documents/${docId}`, {
+        method: 'DELETE',
+        headers: isHostAdmin ? { 'X-Admin-Role': 'admin' } : {}
+      });
       if (res.ok) {
         setDocuments((prev) => prev.filter((d) => d.id !== docId));
       }
@@ -409,12 +611,21 @@ export default function App() {
     setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
+  const formatTimestamp = (ts: string) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ position: 'relative' }}>
+      {/* Interactive 3D Canvas Background */}
+      <ThreeBackground scrollRef={chatScrollRef} />
+
       {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar
         currentView={currentView}
         setCurrentView={(view) => {
+          if (view === 'kb' && !isHostAdmin) return;
           setCurrentView(view);
           if (view === 'kb') fetchDocuments();
         }}
@@ -423,10 +634,13 @@ export default function App() {
         onSelectConversation={(id) => {
           setCurrentView('chat');
           loadConversation(id);
+          setSidebarOpen(false);
         }}
         onNewConversation={handleStartNewChat}
         onConfirmDelete={handleDeleteConversation}
         backendHealth={backendHealth}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
       />
 
       {/* 2. MAIN APPLICATION CONTENT */}
@@ -434,11 +648,20 @@ export default function App() {
         {/* Header Bar */}
         <div className="chat-header">
           <div className="chat-header-left">
+            {/* Mobile hamburger menu */}
+            <button
+              className="mobile-sidebar-toggle"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              title="Toggle sidebar"
+            >
+              <Menu size={20} />
+            </button>
+
             <div className="chat-header-avatar">
               {currentView === 'kb' ? (
-                <BookOpen size={18} style={{ color: '#2563EB' }} />
+                <BookOpen size={18} style={{ color: '#38BDF8' }} />
               ) : (
-                <Scale size={18} style={{ color: '#2563EB' }} />
+                <Scale size={18} style={{ color: '#38BDF8' }} />
               )}
             </div>
             <div>
@@ -448,7 +671,7 @@ export default function App() {
                 </h3>
                 <span
                   className="chat-header-badge"
-                  style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}
+                  style={{ background: 'rgba(37, 99, 235, 0.25)', color: '#60A5FA', borderColor: 'rgba(96, 165, 250, 0.35)' }}
                 >
                   {currentView === 'kb' ? 'Repository Index' : 'Grounded RAG v2.2'}
                 </span>
@@ -487,23 +710,25 @@ export default function App() {
         {/* Content Body */}
         <div className="chat-scroll-container" ref={chatScrollRef}>
           <div className="chat-content-width" style={{ maxWidth: '1000px', width: '100%' }}>
-            {currentView === 'kb' ? (
-              /* KNOWLEDGE BASE VIEW */
+            {currentView === 'kb' && isHostAdmin ? (
+              /* KNOWLEDGE BASE VIEW (Admin Only) */
               <div className="kb-container animate-scale-in" style={{ padding: '24px 0' }}>
                 <div
                   style={{
-                    background: '#FFFFFF',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                    border: '1px solid #CBD5E1',
+                    background: 'rgba(15, 23, 42, 0.72)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '16px',
                     padding: '24px',
                     marginBottom: '24px'
                   }}
                 >
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: '#0F172A' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 'bold', color: '#FFFFFF' }}>
                     Upload Legal Agreement
                   </h4>
-                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
+                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#94A3B8', lineHeight: '1.6' }}>
                     Upload standard contracts, agreements, or terms (.pdf, .txt, .md). The document will be
                     automatically parsed, split across contract section boundaries, and indexed into ChromaDB
                     vector embeddings for grounded retrieval.
@@ -539,7 +764,7 @@ export default function App() {
                     </label>
 
                     {isUploading && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#2563EB' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#38BDF8' }}>
                         <RefreshCw size={14} className="animate-spin" />
                         <span>Parsing and indexing document vectors...</span>
                       </div>
@@ -549,7 +774,7 @@ export default function App() {
 
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#0F172A' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#FFFFFF' }}>
                       Indexed Agreements & Contracts
                     </h4>
                     <span
@@ -558,8 +783,9 @@ export default function App() {
                         fontWeight: '600',
                         padding: '2px 8px',
                         borderRadius: '12px',
-                        background: '#EFF6FF',
-                        color: '#1D4ED8'
+                        background: 'rgba(37, 99, 235, 0.25)',
+                        color: '#93C5FD',
+                        border: '1px solid rgba(96, 165, 250, 0.3)'
                       }}
                     >
                       {documents.length} {documents.length === 1 ? 'document' : 'documents'}
@@ -572,10 +798,10 @@ export default function App() {
                     style={{
                       padding: '48px',
                       textAlign: 'center',
-                      color: '#64748B',
+                      color: '#94A3B8',
                       fontSize: '14px',
-                      background: '#FFFFFF',
-                      border: '1px dashed #CBD5E1',
+                      background: 'rgba(15, 23, 42, 0.5)',
+                      border: '1px dashed rgba(255, 255, 255, 0.15)',
                       borderRadius: '12px'
                     }}
                   >
@@ -591,9 +817,11 @@ export default function App() {
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           padding: '16px 20px',
-                          background: '#FFFFFF',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                          border: '1px solid #E2E8F0',
+                          background: 'rgba(15, 23, 42, 0.65)',
+                          backdropFilter: 'blur(16px)',
+                          WebkitBackdropFilter: 'blur(16px)',
+                          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.25)',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
                           borderRadius: '12px'
                         }}
                       >
@@ -603,19 +831,20 @@ export default function App() {
                               width: '40px',
                               height: '40px',
                               borderRadius: '10px',
-                              background: '#EFF6FF',
+                              background: 'rgba(37, 99, 235, 0.25)',
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center'
                             }}
                           >
-                            <FileCheck size={20} style={{ color: '#2563EB' }} />
+                            <FileCheck size={20} style={{ color: '#38BDF8' }} />
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#0F172A' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#F8FAFC' }}>
                               {doc.filename}
                             </span>
-                            <span style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                            <span style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>
                               Uploaded: {new Date(doc.uploaded_at).toLocaleString()}
                             </span>
                           </div>
@@ -649,38 +878,34 @@ export default function App() {
             ) : (
               /* LIVE CHAT VIEW */
               <div className="chat-messages-container" style={{ padding: '20px 0' }}>
+                {/* RICH WELCOME SCREEN */}
                 {messages.length === 0 && !isLoadingMessages && (
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      padding: '80px 20px',
-                      color: '#64748B',
-                      background: '#FFFFFF',
-                      borderRadius: '16px',
-                      border: '1px solid #E2E8F0'
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '56px',
-                        height: '56px',
-                        borderRadius: '50%',
-                        background: '#EFF6FF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        margin: '0 auto 16px',
-                        color: '#2563EB'
-                      }}
-                    >
-                      <Bot size={28} />
+                  <div className="chat-welcome-container animate-fadeInUp">
+                    <div className="welcome-avatar-wrapper" style={{ background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.25), rgba(99, 102, 241, 0.25))', border: '1.5px solid rgba(56, 189, 248, 0.45)' }}>
+                      <Bot size={28} style={{ color: '#38BDF8' }} />
                     </div>
-                    <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#0F172A', marginBottom: '8px' }}>
-                      Legal & Contracts Intelligence
-                    </h3>
-                    <p style={{ fontSize: '14px', color: '#475569', maxWidth: '520px', margin: '0 auto', lineHeight: '1.6' }}>
+                    <h3 className="welcome-title">Legal &amp; Contracts Intelligence</h3>
+                    <p className="welcome-desc">
                       Ask questions about governing law, termination notice periods, liability caps, or GDPR standard clauses across all uploaded agreements.
                     </p>
+                    <div className="welcome-suggestions-list">
+                      <span className="welcome-suggestions-title">Try asking</span>
+                      {[
+                        { icon: '⚖️', text: 'What is the governing law in the Master Services Agreement?' },
+                        { icon: '📋', text: 'Summarize all termination clauses across uploaded contracts' },
+                        { icon: '🔒', text: 'Are there any GDPR or data protection clauses?' },
+                        { icon: '💰', text: 'What are the liability caps and indemnification terms?' }
+                      ].map((suggestion, idx) => (
+                        <button
+                          key={idx}
+                          className="suggestion-chip"
+                          onClick={() => { setInputText(suggestion.text); textareaRef.current?.focus(); }}
+                        >
+                          <span className="suggestion-icon" style={{ fontSize: '18px' }}>{suggestion.icon}</span>
+                          <span>{suggestion.text}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -693,218 +918,196 @@ export default function App() {
                   messages.map((msg) => (
                     <div
                       key={msg.id}
-                      className={`message-bubble-wrapper ${msg.sender === 'user' ? 'user-msg' : 'bot-msg'}`}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                        marginBottom: '20px'
-                      }}
+                      className={`message-row ${msg.sender} ${msg.sender === 'user' ? 'message-enter-user' : 'message-enter-bot'}`}
                     >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: '10px',
-                          maxWidth: '85%',
-                          flexDirection: msg.sender === 'user' ? 'row-reverse' : 'row'
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            background: msg.sender === 'user' ? '#3B82F6' : '#F1F5F9',
-                            color: msg.sender === 'user' ? '#FFFFFF' : '#1E293B',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
-                          }}
-                        >
-                          {msg.sender === 'user' ? <User size={16} /> : <Bot size={16} />}
+                      {/* Bot Avatar: Strictly on the LEFT for Bot */}
+                      {msg.sender === 'bot' && (
+                        <div className="message-avatar bot-avatar">
+                          <Bot size={18} />
                         </div>
+                      )}
 
-                        <div
-                          style={{
-                            background: msg.sender === 'user' ? '#2563EB' : '#FFFFFF',
-                            color: msg.sender === 'user' ? '#FFFFFF' : '#0F172A',
-                            padding: '14px 18px',
-                            borderRadius: msg.sender === 'user' ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
-                            border: msg.sender === 'user' ? 'none' : '1px solid #E2E8F0',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                            fontSize: '14px',
-                            lineHeight: '1.6',
-                            whiteSpace: 'pre-wrap'
-                          }}
-                        >
-                          {msg.content}
+                      <div className="message-bubble-wrapper">
+                        <div className={`message-bubble ${msg.sender}-bubble glassmorphic-card`}>
+                          {msg.sender === 'bot' && !msg.content ? (
+                            <div style={{ minWidth: '240px' }}>
+                              <div className="thinking-indicator">
+                                <div className="thinking-dot" style={{ animationDelay: '0s' }}></div>
+                                <div className="thinking-dot" style={{ animationDelay: '0.15s' }}></div>
+                                <div className="thinking-dot" style={{ animationDelay: '0.3s' }}></div>
+                              </div>
+                              <div className="thinking-shimmer" style={{ marginTop: '12px', height: '10px', borderRadius: '5px' }}></div>
+                              <div className="thinking-shimmer" style={{ marginTop: '8px', height: '10px', borderRadius: '5px', width: '65%' }}></div>
+                              <p style={{ fontSize: '12px', color: '#475569', marginTop: '10px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                                <Sparkles size={13} style={{ color: '#2563EB' }} />
+                                Synthesizing contract analysis...
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="message-text-content">
+                              {msg.content}
+                            </div>
+                          )}
 
-                          {/* Sources & Citations Box */}
+                          {/* Verified Source Reference Badges — Secure & Minimal (No raw internal chunk dumps or internal scores) */}
                           {msg.sources && msg.sources.length > 0 && (
-                            <div
-                              style={{
-                                marginTop: '14px',
-                                paddingTop: '12px',
-                                borderTop: '1px solid #E2E8F0',
-                                fontSize: '12px'
-                              }}
-                            >
-                              <div style={{ fontWeight: '600', color: '#475569', marginBottom: '8px' }}>
-                                Verified Citations:
-                              </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {msg.sources.map((src: any, idx: number) => (
-                                  <div
-                                    key={idx}
-                                    style={{
-                                      background: '#F8FAFC',
-                                      padding: '8px 12px',
-                                      borderRadius: '8px',
-                                      border: '1px solid #E2E8F0'
-                                    }}
-                                  >
-                                    <div style={{ fontWeight: '600', color: '#1E40AF', display: 'flex', justifyContent: 'space-between' }}>
-                                      <span>{src.document_name}</span>
-                                      {src.score && <span>Relevance: {(src.score * 100).toFixed(0)}%</span>}
-                                    </div>
-                                    <p style={{ margin: '4px 0 0 0', color: '#334155', fontStyle: 'italic' }}>
-                                      "{src.snippet || src.content}"
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
+                            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}>
+                                <ShieldCheck size={13} style={{ color: '#10B981' }} /> Verified Sources:
+                              </span>
+                              {Array.from(new Set(msg.sources.map((s: any) => s.document_name || s.filename))).filter(Boolean).map((docName: any, idx: number) => (
+                                <span
+                                  key={idx}
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 500,
+                                    padding: '2px 9px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(30, 41, 59, 0.65)',
+                                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                                    color: '#93C5FD',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)'
+                                  }}
+                                >
+                                  <BookOpen size={10} style={{ color: '#38BDF8' }} /> {docName}
+                                </span>
+                              ))}
                             </div>
                           )}
 
                           {/* Action Bar for Bot Messages */}
-                          {msg.sender === 'bot' && (
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '12px',
-                                marginTop: '10px',
-                                paddingTop: '8px',
-                                borderTop: '1px solid #F1F5F9',
-                                color: '#64748B',
-                                fontSize: '12px'
-                              }}
-                            >
+                          {msg.sender === 'bot' && msg.content && msg.content.trim().length > 0 && (
+                            <div className="message-actions-bar">
                               <button
                                 onClick={() => copyToClipboard(msg.content, `msg-${msg.id}`)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#64748B' }}
+                                className="msg-action-btn"
                                 title="Copy response"
                               >
-                                {copiedCodeId === `msg-${msg.id}` ? <Check size={13} color="#16A34A" /> : <Copy size={13} />}
+                                {copiedCodeId === `msg-${msg.id}` ? <Check size={14} color="#16A34A" /> : <Copy size={14} />}
                                 <span>{copiedCodeId === `msg-${msg.id}` ? 'Copied' : 'Copy'}</span>
                               </button>
 
                               <button
                                 onClick={() => speakText(msg.id, msg.content)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', color: '#64748B' }}
+                                className="msg-action-btn"
                                 title="Read aloud"
                               >
-                                {speakingMessageId === msg.id ? <VolumeX size={13} color="#DC2626" /> : <Volume2 size={13} />}
+                                {speakingMessageId === msg.id ? <VolumeX size={14} color="#DC2626" /> : <Volume2 size={14} />}
                                 <span>{speakingMessageId === msg.id ? 'Stop' : 'Listen'}</span>
                               </button>
 
                               <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
                                 <button
                                   onClick={() => handleFeedback(msg.id, 'thumbs_up')}
-                                  style={{
-                                    background: msg.feedback?.rating === 'thumbs_up' ? '#DCFCE7' : 'none',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    padding: '3px 6px',
-                                    cursor: 'pointer',
-                                    color: msg.feedback?.rating === 'thumbs_up' ? '#16A34A' : '#64748B'
-                                  }}
+                                  className={`feedback-btn ${msg.feedback?.rating === 'thumbs_up' ? 'active-up' : ''}`}
                                   title="Accurate Answer"
                                 >
-                                  <ThumbsUp size={13} />
+                                  <ThumbsUp size={14} />
                                 </button>
                                 <button
                                   onClick={() => handleFeedback(msg.id, 'thumbs_down')}
-                                  style={{
-                                    background: msg.feedback?.rating === 'thumbs_down' ? '#FEE2E2' : 'none',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    padding: '3px 6px',
-                                    cursor: 'pointer',
-                                    color: msg.feedback?.rating === 'thumbs_down' ? '#DC2626' : '#64748B'
-                                  }}
+                                  className={`feedback-btn ${msg.feedback?.rating === 'thumbs_down' ? 'active-down' : ''}`}
                                   title="Inaccurate / Hallucination"
                                 >
-                                  <ThumbsDown size={13} />
+                                  <ThumbsDown size={14} />
                                 </button>
                               </div>
                             </div>
                           )}
                         </div>
+
+                        {/* Timestamp */}
+                        <span className="message-timestamp">
+                          {formatTimestamp(msg.timestamp)}
+                        </span>
                       </div>
+
+                      {/* User Avatar: Strictly on the RIGHT for User */}
+                      {msg.sender === 'user' && (
+                        <div className="message-avatar user-avatar">
+                          <User size={18} />
+                        </div>
+                      )}
                     </div>
                   ))
-                )}
-
-                {isGenerating && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#64748B', fontSize: '13px', margin: '16px 0' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563EB' }}>
-                      <Bot size={16} />
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <RefreshCw size={14} className="animate-spin" />
-                      <span>Synthesizing grounded answer from contract clauses...</span>
-                    </div>
-                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Floating Input Panel */}
+        {/* Visible, Attractive AI Prompt Dock */}
         {currentView === 'chat' && (
-          <div className="input-panel-floating">
-            <div className="input-container-row">
+          <div className="chat-input-dock">
+            {isListening && (
+              <div className="listening-banner animate-fadeInUp">
+                <div className="soundwave">
+                  <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <span>Listening to speech... Speak your legal query</span>
+              </div>
+            )}
+
+            <div className="prompt-bar-card">
+              {/* Mic / Dictation Button */}
               <button
                 type="button"
                 onClick={toggleListening}
-                className={`btn-3d btn-3d-secondary ${isListening ? 'listening' : ''}`}
-                title={isListening ? 'Stop listening' : 'Start dictation'}
+                className={`prompt-action-btn mic-btn ${isListening ? 'is-active' : ''}`}
+                title={isListening ? 'Stop listening' : 'Dictate with microphone'}
               >
                 <Mic size={18} />
               </button>
 
-              <div className="textarea-wrapper">
+              {/* Textarea with High Contrast */}
+              <div className="prompt-textarea-container">
                 <textarea
                   ref={textareaRef}
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  rows={1}
+                  onChange={(e) => {
+                    if (e.target.value.length <= MAX_INPUT_CHARS) {
+                      setInputText(e.target.value);
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Ask a legal query regarding contract terms... (e.g. 'What is the notice period for termination?')"
-                  className="chat-textarea"
+                  placeholder="Ask a legal query regarding contract terms... (Press Enter to send)"
+                  className="prompt-textarea"
                   disabled={isListening || isGenerating}
                 />
-
-                <div className="absolute-send-btn">
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!inputText.trim() || isGenerating}
-                    className="btn-3d btn-3d-primary"
-                    style={{ padding: '8px 14px', borderRadius: '10px' }}
-                    title="Send Message"
-                  >
-                    <Send size={14} />
-                  </button>
-                </div>
               </div>
+
+              {/* Right Side Actions */}
+              <div className="prompt-right-actions">
+                {inputText.length > 0 && (
+                  <span className={`prompt-char-counter ${inputText.length > MAX_INPUT_CHARS * 0.9 ? 'limit-warning' : ''}`}>
+                    {inputText.length}/{MAX_INPUT_CHARS}
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSendMessage}
+                  disabled={!inputText.trim() || isGenerating}
+                  className={`prompt-send-btn ${inputText.trim() && !isGenerating ? 'active' : ''}`}
+                  title="Send Message"
+                >
+                  <Send size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Helpful dock guidance */}
+            <div className="prompt-dock-footer">
+              <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line • Grounded in verified contract clauses</span>
             </div>
           </div>
         )}
@@ -953,12 +1156,22 @@ export default function App() {
           <div
             className="modal-content animate-scale-in"
             onClick={(e) => e.stopPropagation()}
-            style={{ textAlign: 'center', maxWidth: '440px', padding: '28px 24px', background: '#FFFFFF', borderRadius: '16px' }}
+            style={{
+              textAlign: 'center',
+              maxWidth: '440px',
+              padding: '28px 24px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(28px)',
+              WebkitBackdropFilter: 'blur(28px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(37, 99, 235, 0.2)',
+              borderRadius: '16px'
+            }}
           >
-            <h3 className="modal-title" style={{ fontSize: '18px', fontWeight: 'bold', color: '#0F172A', marginBottom: '8px' }}>
+            <h3 className="modal-title" style={{ fontSize: '18px', fontWeight: 'bold', color: '#FFFFFF', marginBottom: '8px' }}>
               Delete Document?
             </h3>
-            <p className="modal-desc" style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6', marginBottom: '24px' }}>
+            <p className="modal-desc" style={{ fontSize: '13px', color: '#94A3B8', lineHeight: '1.6', marginBottom: '24px' }}>
               Permanently delete "{docToDelete.filename}"? All indexed chunks will be purged.
             </p>
             <div className="modal-actions" style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>

@@ -11,6 +11,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(String(50), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String(100), nullable=True, index=True)
     title = Column(String(100), nullable=False)
     agent_type = Column(String(50), default="general")
     created_at = Column(DateTime, default=utc_now)
