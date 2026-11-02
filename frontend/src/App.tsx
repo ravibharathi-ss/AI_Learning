@@ -254,8 +254,21 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        // Filter out empty phantom bot placeholders so they don't render empty cards
-        const validMessages = (data || []).filter((m: Message) => !(m.sender === 'bot' && !m.content?.trim()));
+        // Normalize sources (parse stringified JSON from database if needed)
+        const validMessages = (data || []).map((m: any) => {
+          let parsedSources = m.sources;
+          if (typeof m.sources === 'string') {
+            try {
+              parsedSources = JSON.parse(m.sources);
+            } catch {
+              parsedSources = [];
+            }
+          }
+          return {
+            ...m,
+            sources: Array.isArray(parsedSources) ? parsedSources : []
+          };
+        }).filter((m: Message) => !(m.sender === 'bot' && !m.content?.trim()));
         setMessages(validMessages);
       }
     } catch (e) {
@@ -950,33 +963,50 @@ export default function App() {
                           )}
 
                           {/* Verified Source Reference Badges — Secure & Minimal (No raw internal chunk dumps or internal scores) */}
-                          {msg.sources && msg.sources.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
-                              <span style={{ fontSize: '11px', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}>
-                                <ShieldCheck size={13} style={{ color: '#10B981' }} /> Verified Sources:
-                              </span>
-                              {Array.from(new Set(msg.sources.map((s: any) => s.document_name || s.filename))).filter(Boolean).map((docName: any, idx: number) => (
-                                <span
-                                  key={idx}
-                                  style={{
-                                    fontSize: '11px',
-                                    fontWeight: 500,
-                                    padding: '2px 9px',
-                                    borderRadius: '12px',
-                                    background: 'rgba(30, 41, 59, 0.65)',
-                                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                                    color: '#93C5FD',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)'
-                                  }}
-                                >
-                                  <BookOpen size={10} style={{ color: '#38BDF8' }} /> {docName}
+                          {(() => {
+                            let sourcesList: any[] = [];
+                            if (Array.isArray(msg.sources)) {
+                              sourcesList = msg.sources;
+                            } else if (typeof msg.sources === 'string') {
+                              try {
+                                const parsed = JSON.parse(msg.sources);
+                                if (Array.isArray(parsed)) sourcesList = parsed;
+                              } catch {
+                                sourcesList = [];
+                              }
+                            }
+                            if (!sourcesList || sourcesList.length === 0) return null;
+                            const uniqueDocNames = Array.from(new Set(sourcesList.map((s: any) => s?.document_name || s?.filename))).filter(Boolean);
+                            if (uniqueDocNames.length === 0) return null;
+
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                                <span style={{ fontSize: '11px', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}>
+                                  <ShieldCheck size={13} style={{ color: '#10B981' }} /> Verified Sources:
                                 </span>
-                              ))}
-                            </div>
-                          )}
+                                {uniqueDocNames.map((docName: any, idx: number) => (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      fontSize: '11px',
+                                      fontWeight: 500,
+                                      padding: '2px 9px',
+                                      borderRadius: '12px',
+                                      background: 'rgba(30, 41, 59, 0.65)',
+                                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                                      color: '#93C5FD',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)'
+                                    }}
+                                  >
+                                    <BookOpen size={10} style={{ color: '#38BDF8' }} /> {docName}
+                                  </span>
+                                ))}
+                              </div>
+                            );
+                          })()}
 
                           {/* Action Bar for Bot Messages */}
                           {msg.sender === 'bot' && msg.content && msg.content.trim().length > 0 && (
