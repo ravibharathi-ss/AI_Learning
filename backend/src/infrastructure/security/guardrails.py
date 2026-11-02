@@ -3,7 +3,14 @@ Security Guardrails: Prompt Injection Detection, Input Sanitization, and PII Mas
 """
 
 import re
+import logging
 from typing import Tuple, Dict, Any, Optional
+
+try:
+    from infrastructure.observability.structured_logger import get_logger
+    logger = get_logger("security.guardrails")
+except Exception:
+    logger = logging.getLogger("security.guardrails")
 
 class SecurityGuardrails:
     """
@@ -38,6 +45,10 @@ class SecurityGuardrails:
 
         for pattern in cls.INJECTION_PATTERNS:
             if re.search(pattern, query):
+                logger.warning(
+                    f"Prompt injection attempt detected and blocked: pattern matched '{pattern}'",
+                    extra={"event": "prompt_injection_blocked", "security_action": "reject"}
+                )
                 return False, "PROMPT_INJECTION_DETECTED"
 
         return True, None

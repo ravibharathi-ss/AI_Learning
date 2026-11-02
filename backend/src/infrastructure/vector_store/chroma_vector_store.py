@@ -3,8 +3,15 @@ ChromaDB Vector Store Implementation of IVectorStore
 """
 
 import os
+import logging
 from typing import List, Dict, Any, Optional
 from domain.interfaces.vector_store import IVectorStore, VectorRecord, SearchResult
+
+try:
+    from infrastructure.observability.structured_logger import get_logger
+    logger = get_logger("vector_store.chroma")
+except Exception:
+    logger = logging.getLogger("vector_store.chroma")
 
 try:
     import chromadb
@@ -29,7 +36,7 @@ class ChromaVectorStore(IVectorStore):
                     metadata={"hnsw:space": "cosine"}
                 )
             except Exception as e:
-                print(f"Warning: ChromaDB initialization failed ({e}), using memory fallback.")
+                logger.warning(f"ChromaDB initialization failed ({e}), using memory fallback.")
                 self.collection = None
 
     def upsert(self, records: List[VectorRecord]) -> bool:
@@ -50,7 +57,7 @@ class ChromaVectorStore(IVectorStore):
                 )
                 return True
             except Exception as e:
-                print(f"ChromaDB upsert error: {e}")
+                logger.error(f"ChromaDB upsert error: {e}", exc_info=True)
                 if "expecting embedding with dimension" in str(e) and self.client:
                     try:
                         self.client.delete_collection(self.collection_name)
@@ -66,7 +73,7 @@ class ChromaVectorStore(IVectorStore):
                         )
                         return True
                     except Exception as retry_e:
-                        print(f"ChromaDB recreate error: {retry_e}")
+                        logger.error(f"ChromaDB recreate error: {retry_e}", exc_info=True)
 
         # Fallback in-memory
         for r in records:
@@ -114,7 +121,7 @@ class ChromaVectorStore(IVectorStore):
                             ))
                     return results
             except Exception as e:
-                print(f"ChromaDB search error: {e}")
+                logger.error(f"ChromaDB search error: {e}", exc_info=True)
 
         # Fallback cosine search over in-memory records
         import math
@@ -144,7 +151,7 @@ class ChromaVectorStore(IVectorStore):
                 self.collection.delete(where={"document_id": document_id})
                 deleted = True
             except Exception as e:
-                print(f"ChromaDB delete error: {e}")
+                logger.error(f"ChromaDB delete error: {e}", exc_info=True)
 
         to_remove = [k for k, v in self._fallback_records.items() if str(v.metadata.get("document_id")) == document_id]
         for k in to_remove:

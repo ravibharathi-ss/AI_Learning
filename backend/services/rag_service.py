@@ -2,9 +2,16 @@ import os
 import re
 import math
 import json
+import logging
 import urllib.request
 from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
+
+try:
+    from infrastructure.observability.structured_logger import get_logger
+    logger = get_logger("rag_service")
+except Exception:
+    logger = logging.getLogger("rag_service")
 
 try:
     import models
@@ -34,9 +41,9 @@ class RagService:
                     name="rag_knowledge_base",
                     metadata={"hnsw:space": "cosine"}
                 )
-                print(f"ChromaDB Vector Database initialized at '{self.chroma_path}'.")
+                logger.info(f"ChromaDB Vector Database initialized at '{self.chroma_path}'.")
             except Exception as e:
-                print(f"Error initializing ChromaDB: {e}")
+                logger.error(f"Error initializing ChromaDB: {e}", exc_info=True)
                 self.collection = None
 
     def rewrite_query(self, query: str) -> Dict[str, Any]:
@@ -109,7 +116,7 @@ class RagService:
                     return embeddings[0]
                 return []
         except Exception as e:
-            print(f"Error generating embedding via Ollama ({self.embed_model}): {str(e)}")
+            logger.error(f"Error generating embedding via Ollama ({self.embed_model}): {str(e)}")
             return []
 
     def compute_cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
@@ -266,7 +273,7 @@ class RagService:
             try:
                 self.collection.delete(where={"filename": filename})
             except Exception as e:
-                print(f"ChromaDB collection deletion note: {e}")
+                logger.info(f"ChromaDB collection deletion note: {e}")
 
         doc = models.Document(filename=filename)
         db.add(doc)
@@ -311,9 +318,9 @@ class RagService:
                     documents=chroma_documents,
                     metadatas=chroma_metadatas
                 )
-                print(f"Indexed {len(chroma_ids)} vector embeddings for '{filename}' in ChromaDB.")
+                logger.info(f"Indexed {len(chroma_ids)} vector embeddings for '{filename}' in ChromaDB.")
             except Exception as e:
-                print(f"Error adding vectors to ChromaDB: {e}")
+                logger.error(f"Error adding vectors to ChromaDB: {e}", exc_info=True)
 
         return doc
 
@@ -376,7 +383,7 @@ class RagService:
                                 similarity = max(0.0, 1.0 - dist)
                                 semantic_scored.append((similarity, chunk_map[cid]))
                 except Exception as e:
-                    print(f"ChromaDB query error, falling back to SQLite vector search: {e}")
+                    logger.warning(f"ChromaDB query error, falling back to SQLite vector search: {e}")
 
             if not semantic_scored:
                 for chunk in all_chunks:

@@ -1,14 +1,34 @@
 import os
-import uvicorn
+import sys
+import time
+import uuid
 import json
 import logging
+import uvicorn
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
 
-logger = logging.getLogger("chatbot_backend")
+# Register Clean Architecture source path
+src_path = str(Path(__file__).resolve().parent / "src")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+
+from infrastructure.observability.structured_logger import (
+    setup_production_logging,
+    get_logger,
+    request_id_ctx,
+    session_id_ctx,
+    trace_id_ctx
+)
+
+# Initialize production logging configuration
+setup_production_logging()
+logger = get_logger("chatbot_api")
 
 import models
 import schemas
@@ -21,22 +41,79 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Customer Support Chatbot API")
 
-# Configure CORS to allow React frontend (default Vite ports: 5173, etc.)
+# Configure CORS to allow React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For local development, allow all. Or specify http://localhost:5173
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Clean Architecture Routers
-import sys
-from pathlib import Path
-src_path = str(Path(__file__).resolve().parent / "src")
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
+# Production HTTP Access & Latency Observability Middleware
+@app.middleware("http")
+async def production_observability_middleware(request: Request, call_next):
+    req_id = request.headers.get("X-Request-ID") or f"req-{uuid.uuid4().hex[:10]}"
+    sess_id = request.headers.get("X-Session-ID") or "anonymous"
+    trace_id = request.headers.get("X-Trace-ID") or f"trace-{uuid.uuid4().hex[:12]}"
 
+    token_req = request_id_ctx.set(req_id)
+    token_sess = session_id_ctx.set(sess_id)
+    token_tr = trace_id_ctx.set(trace_id)
+
+    start_time = time.perf_counter()
+    client_ip = request.client.host if request.client else "unknown"
+
+    logger.info(
+        f"HTTP {request.method} {request.url.path} started from {client_ip}",
+        extra={
+            "http_method": request.method,
+            "http_path": request.url.path,
+            "client_ip": client_ip,
+            "event": "http_request_start"
+        }
+    )
+
+    try:
+        response = await call_next(request)
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        response.headers["X-Request-ID"] = req_id
+        response.headers["X-Response-Time"] = f"{duration_ms}ms"
+
+        log_level = logging.WARNING if response.status_code >= 400 else logging.INFO
+        logger.log(
+            log_level,
+            f"HTTP {request.method} {request.url.path} finished {response.status_code} in {duration_ms}ms",
+            extra={
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+                "client_ip": client_ip,
+                "event": "http_request_end"
+            }
+        )
+        return response
+    except Exception as exc:
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        logger.error(
+            f"HTTP {request.method} {request.url.path} failed after {duration_ms}ms: {str(exc)}",
+            exc_info=True,
+            extra={
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "duration_ms": duration_ms,
+                "client_ip": client_ip,
+                "event": "http_request_error"
+            }
+        )
+        raise
+    finally:
+        request_id_ctx.reset(token_req)
+        session_id_ctx.reset(token_sess)
+        trace_id_ctx.reset(token_tr)
+
+# Clean Architecture Routers
 from api.routers.health import router as health_router
 from api.routers.search import router as search_router
 from api.routers.chat import router as chat_router
@@ -192,7 +269,7 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                     [f"Source [{chunk['filename']}]: {chunk['content']}" for chunk in retrieved_chunks]
                 )
         except Exception as e:
-            print(f"RAG Retrieval Error: {str(e)}")
+            logger.error("RAG Retrieval Error: %s", str(e), exc_info=True)
 
     async def event_generator():
         # First send the retrieved sources to the frontend
@@ -242,9 +319,9 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                     fresh_db.add(trace_record)
                     fresh_db.commit()
                 except Exception as te:
-                    print(f"Error logging trace: {str(te)}")
+                    logger.warning("Error logging trace: %s", str(te))
             except Exception as e:
-                print(f"Error saving streamed response: {str(e)}")
+                logger.error("Error saving streamed response: %s", str(e), exc_info=True)
             finally:
                 fresh_db.close()
 
@@ -356,14 +433,14 @@ def delete_document(
     try:
         db.query(models.DocumentChunk).filter(models.DocumentChunk.document_id == document_id).delete()
     except Exception as e:
-        print(f"DocumentChunk cleanup note: {e}")
+        logger.info("DocumentChunk cleanup note: %s", str(e))
 
     # 2. Delete vectors from ChromaDB if active
     if rag_service.collection:
         try:
             rag_service.collection.delete(where={"filename": doc.filename})
         except Exception as e:
-            print(f"ChromaDB delete error: {e}")
+            logger.error("ChromaDB delete error: %s", str(e), exc_info=True)
 
     # 3. Delete Document record and commit
     db.delete(doc)

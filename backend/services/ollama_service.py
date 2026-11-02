@@ -2,8 +2,15 @@ import os
 import re
 import time
 import asyncio
+import logging
 from typing import AsyncGenerator, List, Dict, Optional, Any
 from openai import OpenAI
+
+try:
+    from infrastructure.observability.structured_logger import get_logger
+    logger = get_logger("llm_service")
+except Exception:
+    logger = logging.getLogger("llm_service")
 
 class OllamaService:
     def __init__(self):
@@ -14,18 +21,18 @@ class OllamaService:
             self.use_cloud = True
             self.model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
             self.client = OpenAI(api_key=self.openai_key)
-            print(f"Using OpenAI Cloud API ({self.model_name}) for instant ChatGPT response speed.")
+            logger.info(f"Using OpenAI Cloud API ({self.model_name}) for instant ChatGPT response speed.")
         elif self.groq_key:
             self.use_cloud = True
             self.model_name = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
             self.client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=self.groq_key)
-            print(f"Using Groq Cloud API ({self.model_name}) for instant 100ms response speed.")
+            logger.info(f"Using Groq Cloud API ({self.model_name}) for instant 100ms response speed.")
         else:
             self.use_cloud = False
             ollama_url = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434/v1")
             self.model_name = os.getenv("OLLAMA_MODEL", "llama3.2")
             self.client = OpenAI(base_url=ollama_url, api_key="ollama")
-            print(f"Using local Ollama ({self.model_name}) with CPU context optimization.")
+            logger.info(f"Using local Ollama ({self.model_name}) with CPU context optimization.")
 
     def _get_system_prompt(self, agent_type: str, has_rag_context: bool = False) -> str:
         speed_instruction = " Be concise, direct, and structured."
@@ -131,11 +138,11 @@ class OllamaService:
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
             except Exception as stream_err:
-                print(f"Ollama stream ended: {stream_err}")
+                logger.info(f"Ollama stream ended: {stream_err}")
 
         except Exception as e:
             error_msg = str(e)
-            print(f"Ollama Error: {error_msg}")
+            logger.error(f"Ollama Error: {error_msg}", exc_info=True)
             # Provide a helpful offline message explaining how to fix this
             yield (
                 f"\n\n⚠️ **Ollama is not responding.**\n\n"
@@ -190,7 +197,7 @@ class OllamaService:
                 "model": self.model_name
             }
         except Exception as e:
-            print(f"Ollama generate_response error: {e}")
+            logger.error(f"Ollama generate_response error: {e}", exc_info=True)
             return {
                 "content": "",
                 "tokens": 0,
