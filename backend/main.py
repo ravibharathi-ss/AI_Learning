@@ -1,9 +1,11 @@
 import os
 import sys
+import re
 import time
 import uuid
 import json
 import logging
+import asyncio
 import uvicorn
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -255,21 +257,59 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
         role = "user" if msg.sender == "user" else "assistant"
         openai_history.append({"role": role, "content": msg.content})
 
-    # Retrieve relevant context using Week 4 Hybrid Search & Reranking
+    # Retrieve relevant context (Catalog inventory or RAG hybrid search)
     rag_context = ""
     retrieved_chunks = []
     latest_user_query = ""
     if len(history_messages) > 0:
-        latest_user_query = history_messages[-1].content
-        try:
-            hybrid_res = rag_service.retrieve_hybrid(db, latest_user_query, limit=3)
-            retrieved_chunks = hybrid_res["chunks"]
-            if retrieved_chunks:
-                rag_context = "\n\n".join(
-                    [f"Source [{chunk['filename']}]: {chunk['content']}" for chunk in retrieved_chunks]
-                )
-        except Exception as e:
-            logger.error("RAG Retrieval Error: %s", str(e), exc_info=True)
+        latest_user_query = history_messages[-1].content.strip()
+
+        # Check if user is asking to list, overview, or describe available knowledge base documents
+        kb_query_patterns = [
+            r'\b(list|show|what|tell|overview|give|display|all)\b.*\b(knowledge\s*base|documents?|contracts?|agreements?|files?)\b',
+            r'\b(knowledge\s*base)\b.*\b(list|show|what|have|available|contain|in|overview|all)\b',
+            r'^(knowledge\s*base|\/kb|documents|contracts)$',
+            r'\b(which|what)\s+(agreements?|contracts?|documents?|files?)\b.*\b(have|available|uploaded|in)\b'
+        ]
+        is_catalog_request = any(re.search(pat, latest_user_query, re.IGNORECASE) for pat in kb_query_patterns)
+
+        all_docs = db.query(models.Document).order_by(models.Document.filename.asc()).all()
+
+        if is_catalog_request and all_docs:
+            doc_catalog_lines = []
+            for idx, doc in enumerate(all_docs, start=1):
+                clean_name = doc.filename.replace(".pdf", "").replace(".docx", "").replace(".txt", "").replace("_", " ")
+                doc_catalog_lines.append(f"{idx}. {clean_name} ({doc.filename})")
+                retrieved_chunks.append({
+                    "document_id": doc.id,
+                    "document_name": doc.filename,
+                    "chunk_id": 0,
+                    "score": 1.0,
+                    "snippet": f"Verified Knowledge Base Agreement: {doc.filename}",
+                    "clause_reference": doc.filename
+                })
+
+            catalog_str = "\n".join(doc_catalog_lines)
+            rag_context = (
+                f"KNOWLEDGE BASE INVENTORY ({len(all_docs)} Total Active Documents in Database):\n"
+                f"{catalog_str}\n\n"
+                f"OPERATIONAL INSTRUCTION FOR CATALOG LISTING:\n"
+                f"The user is asking to list all documents in the knowledge base.\n"
+                f"1. Executive Overview: Provide a crisp 1-sentence introduction confirming that all {len(all_docs)} documents are active in the knowledge base.\n"
+                f"2. Complete Listing: List ALL {len(all_docs)} documents as distinct bullet points (one concise line per document with the document title and file code in bold).\n"
+                f"3. High Speed Generation: Keep each bullet to exactly one concise line so generation completes rapidly in just a few seconds. Do NOT elaborate on internal sub-clauses unless asked.\n"
+                f"4. Closing: Offer a short 1-sentence closing inviting inquiries regarding specific provisions in any of these {len(all_docs)} agreements."
+            )
+        else:
+            try:
+                hybrid_res = rag_service.retrieve_hybrid(db, latest_user_query, limit=3)
+                retrieved_chunks = hybrid_res["chunks"]
+                if retrieved_chunks:
+                    rag_context = "\n\n".join(
+                        [f"Source [{chunk['filename']}]: {chunk['content']}" for chunk in retrieved_chunks]
+                    )
+            except Exception as e:
+                logger.error("RAG Retrieval Error: %s", str(e), exc_info=True)
 
     async def event_generator():
         # First send the retrieved sources to the frontend
@@ -280,10 +320,11 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
         try:
             async for chunk in ollama_service.get_chat_stream(conv.agent_type, openai_history, rag_context=rag_context):
                 accumulated_response.append(chunk)
-                # SSE data needs multiline content properly formatted with 'data: ' prefix
-                formatted_chunk = chunk.replace("\n", "\ndata: ")
-                yield f"data: {formatted_chunk}\n\n"
+                payload = json.dumps({"token": chunk})
+                yield f"data: {payload}\n\n"
             yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            logger.info("Client cancelled stream generation for message_id=%s", message_id)
         except Exception as e:
             error_msg = f"Error during streaming: {str(e)}"
             formatted_error = error_msg.replace("\n", "\ndata: ")
@@ -390,7 +431,18 @@ async def upload_document(
                     extracted_pages.append(f"--- Page {i + 1} ---\n{page_text}")
             text_content = "\n\n".join(extracted_pages)
             if not text_content.strip():
-                raise ValueError("Could not extract any text from PDF. The file may be empty or contain only raster images.")
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(io.BytesIO(contents)) as pdf:
+                        for idx, p in enumerate(pdf.pages):
+                            pt = p.extract_text() or ""
+                            if pt.strip():
+                                extracted_pages.append(f"--- Page {idx + 1} ---\n{pt}")
+                    text_content = "\n\n".join(extracted_pages)
+                except Exception:
+                    pass
+            if not text_content.strip():
+                raise ValueError("Could not extract any text from PDF. The file may be empty or contain only scanned images.")
         else:
             text_content = contents.decode("utf-8")
     except Exception as e:

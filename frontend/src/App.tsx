@@ -4,6 +4,7 @@ import {
   Bot, 
   User, 
   Send, 
+  Square,
   Volume2, 
   VolumeX, 
   Mic, 
@@ -137,6 +138,85 @@ const removeMyConvId = (id: string) => {
 
 const MAX_INPUT_CHARS = 4000;
 
+const renderInlineSpans = (text: string) => {
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+      return (
+        <strong key={idx} className="bot-bold-text">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+      return (
+        <code key={idx} className="bot-inline-code">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return <span key={idx}>{part}</span>;
+  });
+};
+
+const renderFormattedText = (rawText: string) => {
+  if (!rawText) return null;
+  const rawBlocks = rawText.split(/\n\s*\n/);
+
+  return (
+    <div className="structured-bot-response">
+      {rawBlocks.map((block, bIdx) => {
+        const trimmed = block.trim();
+        if (!trimmed) return null;
+
+        if (/^#{1,3}\s+/.test(trimmed)) {
+          const headerText = trimmed.replace(/^#{1,3}\s+/, '');
+          return (
+            <h4 key={bIdx} className="bot-section-header">
+              {renderInlineSpans(headerText)}
+            </h4>
+          );
+        }
+
+        const lines = trimmed.split('\n');
+        const hasBullets = lines.some((l) => /^\s*([*\-•]|\d+\.)\s+/.test(l));
+
+        if (hasBullets) {
+          return (
+            <div key={bIdx} className="bot-bullet-group">
+              {lines.map((line, lIdx) => {
+                const bulletMatch = line.match(/^\s*([*\-•]|\d+\.)\s+(.*)/);
+                if (bulletMatch) {
+                  return (
+                    <div key={lIdx} className="bot-bullet-item">
+                      <span className="bot-bullet-dot">•</span>
+                      <div className="bot-bullet-body">
+                        {renderInlineSpans(bulletMatch[2])}
+                      </div>
+                    </div>
+                  );
+                }
+                if (!line.trim()) return null;
+                return (
+                  <p key={lIdx} className="bot-block-para">
+                    {renderInlineSpans(line)}
+                  </p>
+                );
+              })}
+            </div>
+          );
+        }
+
+        return (
+          <p key={bIdx} className="bot-block-para">
+            {renderInlineSpans(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
 export default function App() {
   // Navigation & Core State
   const [currentView, setCurrentView] = useState<'chat' | 'kb'>('chat');
@@ -169,6 +249,27 @@ export default function App() {
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Stop current active generation
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsGenerating(false);
+  };
+
+  // Allow stopping generation with Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isGenerating) {
+        handleStopGeneration();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isGenerating]);
 
   // Auto-scroll on new message
   useLayoutEffect(() => {
@@ -244,6 +345,9 @@ export default function App() {
   };
 
   const loadConversation = async (convId: string) => {
+    if (isGenerating) {
+      handleStopGeneration();
+    }
     setIsLoadingMessages(true);
     setActiveConvId(convId);
     localStorage.setItem(STORAGE_KEY_ACTIVE, convId);
@@ -278,6 +382,9 @@ export default function App() {
   };
 
   const handleStartNewChat = async () => {
+    if (isGenerating) {
+      handleStopGeneration();
+    }
     try {
       const res = await fetch(`${API_BASE}/conversations`, {
         method: 'POST',
@@ -389,12 +496,16 @@ export default function App() {
     setMessages((prev) => [...prev, tempUserMsg, tempBotMsg]);
     setIsGenerating(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       // 1. Post to backend to record user message & create bot message entry
       const res = await fetch(`${API_BASE}/conversations/${targetConvId}/messages`, {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({ content: userQuery })
+        body: JSON.stringify({ content: userQuery }),
+        signal: controller.signal
       });
 
       if (!res.ok) {
@@ -416,7 +527,9 @@ export default function App() {
       );
 
       // 2. Stream tokens via SSE from backend /stream endpoint
-      const streamRes = await fetch(`${API_BASE}/conversations/${targetConvId}/messages/${botMsgId}/stream`);
+      const streamRes = await fetch(`${API_BASE}/conversations/${targetConvId}/messages/${botMsgId}/stream`, {
+        signal: controller.signal
+      });
       if (!streamRes.ok || !streamRes.body) {
         throw new Error('Streaming response failed to initialize');
       }
@@ -459,8 +572,17 @@ export default function App() {
               console.error('Error parsing sources from stream:', err);
             }
           } else {
-            // Append incoming streamed token
-            accumulatedText += dataPayload;
+            // Append incoming streamed token (supports JSON wrapped tokens to preserve newlines perfectly)
+            let tokenChunk = dataPayload;
+            if (dataPayload.startsWith('{') && dataPayload.includes('"token"')) {
+              try {
+                const parsed = JSON.parse(dataPayload);
+                tokenChunk = parsed.token !== undefined ? parsed.token : dataPayload;
+              } catch {
+                tokenChunk = dataPayload;
+              }
+            }
+            accumulatedText += tokenChunk;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === botMsgId
@@ -475,20 +597,36 @@ export default function App() {
           }
         }
       }
-    } catch (err) {
-      console.error('Message or stream error:', err);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempBotId || (m.sender === 'bot' && !m.content)
-            ? {
-                ...m,
-                content: 'I encountered an issue generating the legal response. Please check that Ollama is running and try again.'
-              }
-            : m
-        )
-      );
+    } catch (err: any) {
+      if (err.name === 'AbortError' || err.message?.includes('aborted') || controller.signal.aborted) {
+        console.log('Stream generation aborted by user.');
+        // Graceful abort: keep whatever partial text was streamed, or show stopped notice if completely empty
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempBotId || (m.sender === 'bot' && !m.content)
+              ? {
+                  ...m,
+                  content: m.content || 'Response generation stopped.'
+                }
+              : m
+          )
+        );
+      } else {
+        console.error('Message or stream error:', err);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempBotId || (m.sender === 'bot' && !m.content)
+              ? {
+                  ...m,
+                  content: 'I encountered an issue generating the legal response. Please check that Ollama is running and try again.'
+                }
+              : m
+          )
+        );
+      }
     } finally {
       setIsGenerating(false);
+      abortControllerRef.current = null;
       if (textareaRef.current) {
         textareaRef.current.focus();
       }
@@ -957,7 +1095,7 @@ export default function App() {
                             </div>
                           ) : (
                             <div className="message-text-content">
-                              {msg.content}
+                              {msg.sender === 'bot' ? renderFormattedText(msg.content) : msg.content}
                             </div>
                           )}
 
@@ -1077,21 +1215,38 @@ export default function App() {
                   </span>
                 )}
 
-                <button
-                  type="button"
-                  onClick={handleSendMessage}
-                  disabled={!inputText.trim() || isGenerating}
-                  className={`prompt-send-btn ${inputText.trim() && !isGenerating ? 'active' : ''}`}
-                  title="Send Message"
-                >
-                  <Send size={16} />
-                </button>
+                {isGenerating ? (
+                  <button
+                    type="button"
+                    onClick={handleStopGeneration}
+                    className="prompt-stop-btn"
+                    title="Stop generation (Esc)"
+                  >
+                    <Square size={14} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSendMessage}
+                    disabled={!inputText.trim()}
+                    className={`prompt-send-btn ${inputText.trim() ? 'active' : ''}`}
+                    title="Send Message"
+                  >
+                    <Send size={16} />
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Helpful dock guidance */}
             <div className="prompt-dock-footer">
-              <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line • Grounded in verified contract clauses</span>
+              <span>
+                {isGenerating ? (
+                  <>Generating response... Click <strong>Stop</strong> or press <kbd>Esc</kbd> to halt generation</>
+                ) : (
+                  <>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line • Grounded in verified contract clauses</>
+                )}
+              </span>
             </div>
           </div>
         )}
