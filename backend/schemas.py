@@ -31,6 +31,7 @@ class MessageResponse(MessageBase):
     conversation_id: str
     timestamp: datetime
     sources: Optional[str] = None
+    execution_time: Optional[float] = None
     feedback: Optional[FeedbackResponse] = None
 
     class Config:

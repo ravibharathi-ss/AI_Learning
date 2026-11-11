@@ -37,6 +37,7 @@ import schemas
 from database import engine, get_db
 from services.ollama_service import OllamaService
 from services.rag_service import RagService
+from services.langfuse_service import langfuse_tracker
 
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
@@ -257,12 +258,32 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
         role = "user" if msg.sender == "user" else "assistant"
         openai_history.append({"role": role, "content": msg.content})
 
-    # Retrieve relevant context (Catalog inventory or RAG hybrid search)
+    # Retrieve relevant context (Catalog inventory, Greetings, or RAG hybrid search)
     rag_context = ""
     retrieved_chunks = []
     latest_user_query = ""
+    is_greeting_request = False
+    is_catalog_request = False
+
     if len(history_messages) > 0:
         latest_user_query = history_messages[-1].content.strip()
+
+        # Check if user is asking a greeting / pleasantry
+        cleaned_q = re.sub(r'[^\w\s]', '', latest_user_query).strip().lower()
+        words = cleaned_q.split()
+        exact_greetings = {
+            'hi', 'hello', 'hey', 'hola', 'greetings', 'morning', 'evening',
+            'good morning', 'good evening', 'good afternoon', 'how are you',
+            'who are you', 'what can you do', 'help', 'thanks', 'thank you',
+            'bye', 'goodbye', 'namaste', 'welcome'
+        }
+        if cleaned_q in exact_greetings:
+            is_greeting_request = True
+        elif len(words) <= 3 and words:
+            if words[0] in {'hi', 'hello', 'hey', 'greetings', 'welcome'}:
+                is_greeting_request = True
+            elif len(words) >= 2 and ' '.join(words[:2]) in {'good morning', 'good afternoon', 'good evening'}:
+                is_greeting_request = True
 
         # Check if user is asking to list, overview, or describe available knowledge base documents
         kb_query_patterns = [
@@ -295,12 +316,12 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                 f"{catalog_str}\n\n"
                 f"OPERATIONAL INSTRUCTION FOR CATALOG LISTING:\n"
                 f"The user is asking to list all documents in the knowledge base.\n"
-                f"1. Executive Overview: Provide a crisp 1-sentence introduction confirming that all {len(all_docs)} documents are active in the knowledge base.\n"
-                f"2. Complete Listing: List ALL {len(all_docs)} documents as distinct bullet points (one concise line per document with the document title and file code in bold).\n"
-                f"3. High Speed Generation: Keep each bullet to exactly one concise line so generation completes rapidly in just a few seconds. Do NOT elaborate on internal sub-clauses unless asked.\n"
-                f"4. Closing: Offer a short 1-sentence closing inviting inquiries regarding specific provisions in any of these {len(all_docs)} agreements."
+                f"- Open directly with a natural, crisp introductory sentence: 'Our verified knowledge base contains {len(all_docs)} active contracts and legal agreements:' (DO NOT output headings like 'EXECUTIVE OVERVIEW').\n"
+                f"- List ALL {len(all_docs)} documents as clean, polished bullet points (one concise line per document with the document title and file code in bold). (DO NOT output headings like 'STRUCTURED BULLET POINTS').\n"
+                f"- Conclude with a natural 1-sentence closing inviting inquiries regarding specific provisions in any of these agreements. (DO NOT output headings like 'OPERATIVE CITATIONS').\n"
+                f"- Never output meta labels like 'EXECUTIVE OVERVIEW', 'STRUCTURED BULLET POINTS', or 'OPERATIVE CITATIONS'."
             )
-        else:
+        elif not is_greeting_request:
             try:
                 hybrid_res = rag_service.retrieve_hybrid(db, latest_user_query, limit=3)
                 retrieved_chunks = hybrid_res["chunks"]
@@ -312,16 +333,35 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                 logger.error("RAG Retrieval Error: %s", str(e), exc_info=True)
 
     async def event_generator():
+        start_time = time.time()
+
         # First send the retrieved sources to the frontend
         if retrieved_chunks:
             yield f"data: [SOURCES]{json.dumps(retrieved_chunks)}\n\n"
 
         accumulated_response = []
         try:
+            # Task 2: Unique Response Generation for unsupported questions
+            # If query is NOT a greeting, NOT a catalog overview, and NO documents matched:
+            # Enforce strict domain boundary with dynamic, non-repetitive generation
+            if not is_catalog_request and not is_greeting_request and not retrieved_chunks:
+                async for chunk in ollama_service.get_unsupported_response_stream(latest_user_query, openai_history):
+                    accumulated_response.append(chunk)
+                    payload = json.dumps({"token": chunk})
+                    yield f"data: {payload}\n\n"
+                
+                execution_time = round(time.time() - start_time, 2)
+                yield f"data: [EXECUTION_TIME]{json.dumps({'execution_time': execution_time})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
             async for chunk in ollama_service.get_chat_stream(conv.agent_type, openai_history, rag_context=rag_context):
                 accumulated_response.append(chunk)
                 payload = json.dumps({"token": chunk})
                 yield f"data: {payload}\n\n"
+
+            execution_time = round(time.time() - start_time, 2)
+            yield f"data: [EXECUTION_TIME]{json.dumps({'execution_time': execution_time})}\n\n"
             yield "data: [DONE]\n\n"
         except asyncio.CancelledError:
             logger.info("Client cancelled stream generation for message_id=%s", message_id)
@@ -331,7 +371,8 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
             yield f"data: {formatted_error}\n\n"
             accumulated_response.append(error_msg)
         finally:
-            # Update database with the full content and sources references
+            execution_time = round(time.time() - start_time, 2)
+            # Update database with the full content, sources references, and execution time
             full_text = "".join(accumulated_response)
             # Fetch a fresh session to ensure thread safety in finally block
             from database import SessionLocal
@@ -340,6 +381,7 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                 db_bot_msg = fresh_db.query(models.Message).filter(models.Message.id == message_id).first()
                 if db_bot_msg:
                     db_bot_msg.content = full_text
+                    db_bot_msg.execution_time = execution_time
                     if retrieved_chunks:
                         db_bot_msg.sources = json.dumps(retrieved_chunks)
                     fresh_db.commit()
@@ -355,12 +397,33 @@ def stream_bot_message(conversation_id: str, message_id: int, db: Session = Depe
                         system_prompt=ollama_service._get_system_prompt(conv.agent_type, has_rag_context=bool(retrieved_chunks)),
                         retrieved_chunks_json=json.dumps(retrieved_chunks) if retrieved_chunks else None,
                         llm_response=full_text,
-                        latency_ms=1200
+                        latency_ms=int(execution_time * 1000)
                     )
                     fresh_db.add(trace_record)
                     fresh_db.commit()
                 except Exception as te:
                     logger.warning("Error logging trace: %s", str(te))
+
+                # Task 7: Langfuse LLM monitoring & execution tracing
+                try:
+                    langfuse_tracker.record_chat_turn(
+                        trace_name="legal_chat_turn",
+                        user_query=latest_user_query,
+                        bot_response=full_text,
+                        model_name=ollama_service.model_name,
+                        session_id=conv.session_id or conversation_id,
+                        execution_time_s=execution_time,
+                        retrieved_sources=retrieved_chunks,
+                        metadata={
+                            "conversation_id": conversation_id,
+                            "message_id": message_id,
+                            "agent_type": conv.agent_type,
+                            "is_greeting": is_greeting_request,
+                            "is_catalog": is_catalog_request
+                        }
+                    )
+                except Exception as lfe:
+                    logger.debug("Langfuse tracing error: %s", str(lfe))
             except Exception as e:
                 logger.error("Error saving streamed response: %s", str(e), exc_info=True)
             finally:

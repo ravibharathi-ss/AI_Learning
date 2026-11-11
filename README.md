@@ -1,234 +1,214 @@
 # Enterprise Legal & Contracts Intelligence Platform
 
-An enterprise-grade, grounded Retrieval-Augmented Generation (RAG) platform tailored for legal agreement ingestion, semantic clause analysis, strict citation verification, and canary prompt engineering. Built with **Clean Architecture** to ensure testability, security, and zero hallucination risk.
+An enterprise-grade, grounded Retrieval-Augmented Generation (RAG) platform tailored for legal agreement ingestion, semantic clause analysis, strict citation verification, multi-agent evaluation, and LLM observability. Built with **Clean Architecture** to ensure testability, security, and zero hallucination risk.
 
 ---
 
-## 🚫 No UI-Based Testing or Debugging Dashboards
+## 🌟 Key Application Features & Implemented Tasks
 
-This repository enforces an **API-first, code-level testable architecture**.
-
-- **No Developer Testing Dashboards**: Modules such as RAG Retrieval, Error Analysis, Legal Judge, Agent Loops, Agent Security, MCP Studio, and Multi-Agent are **not tested through visual UI dashboards or buttons**.
-- **The Frontend UI is strictly a client**: The React frontend exists solely for standard end-user interaction (Legal Assistant Chat and Knowledge Base document browsing). It is **never** required for testing, debugging, or validating system functionality.
-- **Antigravity-Native Code Debugging**: Developers and AI assistants (Antigravity) inspect, trace, benchmark, and debug the entire application directly through:
-  1. REST API endpoints
-  2. Automated test suites (`pytest backend/tests`)
-  3. Structured JSON diagnostic logs (`trace_id`, `correlation_id`, durations, token counts)
-  4. Ready-to-use HTTP request collections (`tests/api/*.http`)
-  5. Safe diagnostic endpoints (`/api/diagnostics`, `/health/ready`, `/api/documents/{id}/status`)
+| Task | Feature | Status | Description |
+|---|---|:---:|---|
+| **Task 1** | **Greeting Section** | ✅ Implemented | Dynamic, context-aware greeting generation for "Hello", "Hi", "Good Morning", etc., with time-of-day awareness and zero static placeholders. |
+| **Task 2** | **Unique Response Generation** | ✅ Implemented | Dynamic refusal generation for unsupported/off-topic questions. Generates over 1,000 unique natural variations so even repeated queries are uniquely phrased. |
+| **Task 3** | **README Documentation** | ✅ Implemented | Complete architectural blueprint, installation guide, project directory tree, and execution instructions. |
+| **Task 4** | **Environment Configuration** | ✅ Implemented | Safe `.env.example` blueprint defining all required environment variables without leaking credentials. |
+| **Task 5** | **Docker Integration** | ✅ Implemented | Production multi-stage Dockerfiles and `docker-compose.yml` orchestrating Ollama, FastAPI Backend, and React Frontend with healthchecks. |
+| **Task 6** | **Pytest Implementation** | ✅ Implemented | Automated unit and integration test suites testing greeting detection, response uniqueness, application endpoints, and error handling. |
+| **Task 7** | **Langfuse Integration** | ✅ Implemented | Complete LLM observability tracking prompts, model outputs, execution latencies, retrieved RAG chunks, and session metadata. |
+| **Task 8** | **Curriculum Deliverables Log** | ✅ Implemented | Dedicated [`week_3_to_12_tasks.md`](week_3_to_12_tasks.md) documenting tasks, architectures, benchmarks, and completions from Week 3 to 12. |
 
 ---
 
-## 🏛️ Clean Architecture & Module Boundaries
-
-Every capability is isolated behind clear service abstractions and domain interfaces:
+## 📂 Project Directory Structure
 
 ```
-                    ┌─────────────────────────┐
-                    │  Developer / Antigravity│
-                    │   (Code / Tests / APIs) │
-                    └────────────┬────────────┘
-                                 │ HTTP / Code
-                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      FastAPI Backend API                         │
-│  /health/ready    /api/documents    /api/search    /api/chat    │
-│  /api/contracts   /api/traces       /api/diagnostics            │
-├─────────────────────────────────────────────────────────────────┤
-│                     Application Layer                           │
-│  - IngestDocumentUseCase       - SearchUseCase                 │
-│  - ChatRagUseCase              - ContractBusinessRules          │
-├─────────────────────────────────────────────────────────────────┤
-│                       Domain Layer                              │
-│  - Entities: Document, DocumentChunk                            │
-│  - Value Objects: Citation, TokenUsage                          │
-│  - Interfaces: IVectorStore, IEmbeddingService, ILLMService     │
-├─────────────────────────────────────────────────────────────────┤
-│                    Infrastructure Layer                         │
-│  - ChromaVectorStore (Cosine HNSW with auto-recovery)           │
-│  - OllamaEmbeddingService (nomic-embed-text) & Offline Fallback │
-│  - OllamaLlmService (Llama 3.2) & Heuristic Fallback            │
-│  - SqliteDocumentRepository (SQLAlchemy ORM)                   │
-│  - RequestTracer (OpenTelemetry Stage Spans & Token Telemetry)  │
-│  - StructuredLogger (JSON Contextual Logs with Trace IDs)       │
-│  - SecurityGuardrails (Injection Sanitizer & PII Masking)       │
-└─────────────────────────────────────────────────────────────────┘
+ChatBot/
+├── .env.example                               # Root environment blueprint (Task 4)
+├── docker-compose.yml                         # Multi-container orchestration (Task 5)
+├── pytest.ini                                 # Pytest configuration & test paths (Task 6)
+├── README.md                                  # Enterprise documentation (Task 3)
+├── week_3_to_12_tasks.md                      # Curriculum deliverables log (Task 8)
+├── architecture.md                            # Single-page architecture diagram
+├── canary_rollback_plan.md                    # Zero-downtime canary deployment plan
+├── trace.json                                 # Sample production trace with spans
+│
+├── backend/                                   # FastAPI Clean Architecture Backend
+│   ├── .env.example                           # Backend environment template
+│   ├── Dockerfile                             # Multi-stage hardened Python container
+│   ├── requirements.txt                       # Backend Python dependencies
+│   ├── main.py                                # FastAPI API application & streaming SSE
+│   ├── database.py                            # SQLAlchemy database engine & sessions
+│   ├── models.py                              # Core database entities
+│   ├── schemas.py                             # Pydantic v2 validation models
+│   ├── chatbot.db                             # SQLite local database
+│   │
+│   ├── services/                              # Core Domain Services
+│   │   ├── ollama_service.py                  # LLM inference, dynamic greetings & unique responses
+│   │   ├── rag_service.py                     # Hybrid RAG retrieval (BM25 + ChromaDB)
+│   │   ├── langfuse_service.py                # Langfuse LLM observability & tracing (Task 7)
+│   │   ├── mcp_service.py                     # Model Context Protocol engine
+│   │   └── multi_agent_service.py             # Agent-to-Agent squad delegation
+│   │
+│   ├── src/                                   # Clean Architecture Layers
+│   │   ├── domain/                            # Enterprise business rules & entities
+│   │   ├── application/                       # Ingestion & search use cases, security guardrails
+│   │   └── infrastructure/                    # ChromaDB, OpenTelemetry, structured JSON logger
+│   │
+│   └── tests/                                 # Automated Pytest Suites (Task 6)
+│       ├── conftest.py                        # Path resolution & test fixtures
+│       ├── test_multi_agent.py                # Multi-agent squad tests (25 tests)
+│       ├── unit/                              # Unit test cases
+│       │   ├── test_greetings.py              # Task 1 Greeting detection & variety
+│       │   ├── test_unique_responses.py       # Task 2 Unsupported query variety
+│       │   ├── test_chunking.py               # Document chunking tests
+│       │   └── test_security_guardrails.py    # Injection & PII sanitization
+│       └── integration/                       # Integration test cases
+│           ├── test_response_generation.py    # Application endpoints & streaming
+│           ├── test_error_handling.py         # 404, 422, and degradation tests
+│           └── test_document_ingestion_pipeline.py
+│
+├── frontend/                                  # React + Vite + TypeScript Frontend
+│   ├── Dockerfile                             # Multi-stage Nginx container
+│   ├── package.json                           # Frontend dependencies
+│   ├── vite.config.ts                         # Vite configuration
+│   └── src/
+│       ├── App.tsx                            # Main chat interface with active abort & execution time
+│       ├── App.css                            # Glassmorphic AI theme, pulsing wave & skeleton loader
+│       └── components/                        # UI sub-components (Sidebar, McpHub, etc.)
+│
+├── shared-corpus/                             # Standard 6-Contract Shared Legal Corpus
+└── tests/                                     # Root tests & REST Client collections (.http)
+    ├── unit/                                  # Unit tests mirror
+    ├── integration/                           # Integration tests mirror
+    └── api/                                   # Ready-to-run HTTP test files
 ```
-
-### Module Abstraction Mappings:
-
-| Module | Interface / Domain Abstraction | Concrete Service / Use Case | Primary API Endpoint | Automated Test File |
-| :--- | :--- | :--- | :--- | :--- |
-| **RAG & Grounded Q&A** | `ILLMService`, `IEmbeddingService` | `ChatRagUseCase` | `POST /api/chat` | `tests/api/test_api_chat_rag.py` |
-| **Retrieval & Search** | `IVectorStore` | `ChromaVectorStore`, `SearchUseCase` | `POST /api/search` | `tests/api/test_api_search.py`, `tests/unit/test_retrieval_ranking.py` |
-| **Document Ingestion** | `IDocumentRepository` | `IngestDocumentUseCase`, `MultiFormatDocumentLoader` | `POST /api/documents` | `tests/api/test_api_documents.py`, `tests/integration/test_document_ingestion_pipeline.py` |
-| **Golden Set Evaluation** | `GoldenSetEvaluator` | `GoldenSetEvaluator` (32 Cases) | `POST /api/evaluation/golden-set/run` | `tests/api/test_api_shared_corpus_evaluation.py` |
-| **Document Chunking** | *Domain Boundary* | `TextChunker` | Internal / Use Case | `tests/unit/test_chunking.py` |
-| **Security Guardrails**| *Domain Security* | `SecurityGuardrails` | Pre-execution hook | `tests/unit/test_security_guardrails.py` |
-| **Contracts & Canary** | `ContractBusinessRules` | `CanaryRouter` | `POST /api/contracts/query` | `tests/api/test_api_chat_rag.py` |
-| **Multi-Agent Squads** | `IAgentService` | `MultiAgentService` | `POST /api/agent/run` | `tests/test_multi_agent.py` |
-| **Model Context Protocol**| *Tool Socket* | `McpService` | `POST /api/mcp/tools/call` | `tests/test_multi_agent.py` |
 
 ---
 
-## 📜 Standard Shared Legal Contract Corpus & Golden Set (v1.0)
+## ⚙️ Installation & Configuration
 
-The application evaluates against the standard shared legal contract corpus (`shared-corpus/`) containing 6 canonical contracts with full format parity (`.md`, `.docx`, `.pdf`):
+### Prerequisites
+- **Python**: 3.11+
+- **Node.js**: 18+ and `npm`
+- **Ollama**: (Local or Docker) with `llama3.2` and `nomic-embed-text` pulled
+- **Docker & Docker Compose**: (Optional, for containerized run)
 
-- `MSA-2026-014`: Northwind Logistics Master Services Agreement (Original Agreement, 14 Jan 2026)
-- `AMD-2026-014-01`: Northwind Amendment No. 1 (Effective 1 Apr 2026 — 45-day Payment Terms, 45-day Cure Period, 10% Service Credit Cap, Audit twice/year)
-- `AMD-2026-014-02`: Northwind Amendment No. 2 (Controlling Amendment, Effective 1 Aug 2026 — 15 Business Days Termination Notice, USD 5M Liability Cap, 15 BD Breach Notice, 7-year Confidentiality Survival, India Data Residency)
-- `SCH-2026-014`: Northwind Schedules (Schedule A Services, Schedule B Service Levels, Schedule B-2 Escalation Matrix, Schedule C 2026/2027 Holiday Calendar)
-- `MSA-2026-022`: Vertex Retail Master Services Agreement (Disambiguation Target — USD 500k Cap, 20-day Cure Period, Singapore SIAC Arbitration, No Amendments)
-- `NDA-2026-007`: Halcyon Analytics Mutual Non-Disclosure Agreement (EUR 50k Cap, 3-year Confidentiality Survival)
-
-### Ingesting & Evaluating Corpus
-
+### Step 1: Clone & Configure Environment Variables
+Copy the blueprint `.env.example` to `.env`:
 ```bash
-# Ingest all 6 canonical contracts with table preservation & metadata tagging
-python scripts/ingest_shared_corpus.py
-
-# Run complete 32-case Golden Set evaluation
-python scripts/evaluate_golden_set.py
-
-# Run specific case or limited subset
-python scripts/evaluate_golden_set.py --case GS-005
-python scripts/evaluate_golden_set.py --limit 5
+cp .env.example .env
 ```
+Key configuration parameters:
+```ini
+# Application
+ENVIRONMENT=production
+HOST=0.0.0.0
+PORT=8000
 
-### Golden Set API Endpoints
+# LLM & Embeddings (Local Ollama)
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+OLLAMA_MODEL=llama3.2
+OLLAMA_EMBED_MODEL=nomic-embed-text
 
-- `GET /api/evaluation/golden-set/cases`: Inspect all 32 ground-truth test cases and expected values.
-- `POST /api/evaluation/golden-set/run`: Execute the automated evaluation run across all cases or a specific `?case_id=GS-XXX`.
-
----
-
-## 🔄 Grounded RAG Execution Flow
-
-```
-User Query (API)
-       │
-       ▼
-[ Security Guardrails ] ────► Rejects prompt injection & sanitizes input
-       │
-       ▼
-[ Query Embedding ] ────────► 768-dim vector (Ollama nomic-embed-text)
-       │
-       ▼
-[ Vector Search ] ──────────► ChromaDB Cosine Similarity
-       │
-       ├─► (No chunks >= similarity_threshold) ──► Rejection: "Information could not be found"
-       │                                            (Zero Hallucination Guarantee)
-       ▼
-[ Grounded Prompt Construction ] ─► System Prompt + Reference Documents
-       │
-       ▼
-[ LLM Generation ] ─────────► Llama 3.2 inference
-       │
-       ▼
-[ Citation Extraction ] ────► Verifies cited Section & maps to source chunks
-       │
-       ▼
-[ Structured Telemetry ] ───► Logs JSON trace event & saves OpenTelemetry spans
-       │
-       ▼
-HTTP 200 Response with Answer & Verified Sources
+# Langfuse Observability (Task 7)
+LANGFUSE_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-your-public-key
+LANGFUSE_SECRET_KEY=sk-lf-your-secret-key
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
 ---
 
-## 🔍 Structured Logging for Antigravity Code-Level Debugging
+## 🚀 Application Execution
 
-All operations emit structured, machine-parsable JSON logs with operational metadata. Sensitive keys (`api_key`, `tokens`, `passwords`, `bearer`) are automatically redacted:
+### Option A: Local Execution (Development Mode)
 
-```json
-{
-  "timestamp": "2026-10-07T12:45:00.123Z",
-  "event": "rag_response_generated",
-  "status": "success",
-  "trace_id": "trace-4a9b2c1f8e",
-  "correlation_id": "corr-4a9b2c1f8e",
-  "operation": "chat_rag_qa",
-  "duration_ms": 142,
-  "metadata": {
-    "is_grounded": true,
-    "cited_clause": "Section 12.3",
-    "citation_count": 1,
-    "total_tokens": 577,
-    "cost_usd": 0.002751
-  }
-}
-```
-
-Key lifecycle events logged for AI-assisted debugging in Antigravity:
-- `rag_request_received`: Incoming query, user ID, prompt version.
-- `security_violation_blocked`: Threat classification (e.g., prompt injection).
-- `vector_search_completed`: Retrieved chunk count, similarity threshold.
-- `rag_response_ungrounded_refusal`: Explicit refusal when information is absent.
-- `rag_response_generated`: Grounded synthesis completion with token economics.
-- `document_processing_started`: Ingestion trigger with file size and type.
-- `chunking_completed`: Total chunks produced preserving clause boundaries.
-- `document_indexing_completed`: Vector upsert completion into ChromaDB.
-
----
-
-## 🩺 Safe Developer Diagnostic Endpoints
-
-Safe operational metadata is exposed for API inspection:
-
-- `GET /health`: Basic health and component status.
-- `GET /health/live`: Kubernetes / container liveness probe.
-- `GET /health/ready`: Deep readiness probe checking SQLite, ChromaDB, and configuration.
-- `GET /api/diagnostics`: Operational diagnostics exposing component providers, collection names, and active security policies without leaking credentials.
-- `GET /api/documents/{id}/status`: Ingestion status, indexed chunk counts, and processing state.
-- `GET /api/traces`: OpenTelemetry request traces, span breakdown, latency breakdown, and token costs.
-
----
-
-## 🏃 Running Automated Tests
-
-All tests run in **100% isolated offline environments** with **zero paid API dependencies**.
-
+#### 1. Start Ollama and Pull Required Models
 ```bash
-# Run the complete test suite
-pytest backend/tests -v
-
-# Run only Unit tests
-pytest backend/tests/unit -v
-
-# Run only Integration tests
-pytest backend/tests/integration -v
-
-# Run only API-level tests
-pytest backend/tests/api -v
-
-# Run specific RAG Grounding & Anti-Hallucination verification
-pytest backend/tests/api/test_api_chat_rag.py -v
+ollama pull llama3.2
+ollama pull nomic-embed-text
 ```
 
+#### 2. Start the FastAPI Backend
+```bash
+cd backend
+python -m venv .venv
+
+# On Windows:
+.venv\Scripts\activate
+# On Linux/macOS:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+python main.py
+```
+*Backend runs at `http://localhost:8000` (Swagger docs at `http://localhost:8000/docs`).*
+
+#### 3. Start the React Frontend
+In a separate terminal:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+*Frontend runs at `http://localhost:5173`.*
+
 ---
 
-## 🛠️ Developer HTTP Test Collections (`tests/api/`)
+### Option B: Containerized Execution (Docker Compose)
 
-Developers using **VS Code REST Client**, **JetBrains HTTP Client**, or **Bruno** can execute the complete platform lifecycle via the `.http` files located in [`tests/api/`](file:///d:/Program%20files/ChatBot/tests/api):
-
-- [`tests/api/health.http`](file:///d:/Program%20files/ChatBot/tests/api/health.http): Health, liveness, readiness, and diagnostics.
-- [`tests/api/documents.http`](file:///d:/Program%20files/ChatBot/tests/api/documents.http): Multipart document upload, chunking, status, and deletion.
-- [`tests/api/search.http`](file:///d:/Program%20files/ChatBot/tests/api/search.http): Semantic and hybrid keyword search.
-- [`tests/api/chat.http`](file:///d:/Program%20files/ChatBot/tests/api/chat.http): Grounded Q&A, citations, zero-hallucination refusal, and prompt injection defense.
-- [`tests/api/agents.http`](file:///d:/Program%20files/ChatBot/tests/api/agents.http): Multi-agent discovery, agent loop benchmark races, and A2A simulation.
-- [`tests/api/mcp.http`](file:///d:/Program%20files/ChatBot/tests/api/mcp.http): MCP server registration and tool execution.
-- [`tests/api/evaluation.http`](file:///d:/Program%20files/ChatBot/tests/api/evaluation.http): Grounded evaluation suite and legal judge calibration.
-
----
-
-## 🚀 Deployment (Docker Compose)
-
+Launch the full stack (Ollama + Backend + Frontend) in one command:
 ```bash
 docker-compose up --build -d
 ```
+Container endpoints:
+- **Frontend Web UI**: `http://localhost:80`
+- **FastAPI Backend**: `http://localhost:8000`
+- **API Health Check**: `http://localhost:8000/health`
+- **Ollama Engine**: `http://localhost:11434`
 
-- **Backend API**: `http://localhost:8000`
-- **Swagger Docs**: `http://localhost:8000/docs`
-- **Frontend App**: `http://localhost:80`
-- **Readiness Check**: `http://localhost:8000/health/ready`
+---
+
+## 🧪 Automated Testing with Pytest (Task 6)
+
+The application includes comprehensive unit and integration test suites validating functionality, response generation, uniqueness, error handling, and security:
+
+```bash
+# Run all unit and integration tests
+pytest backend/tests/unit backend/tests/integration -v
+
+# Run Task 1 Greeting Section tests
+pytest backend/tests/unit/test_greetings.py -v
+
+# Run Task 2 Unique Response Generation tests
+pytest backend/tests/unit/test_unique_responses.py -v
+
+# Run API Integration & Stream Generation tests
+pytest backend/tests/integration/test_response_generation.py -v
+
+# Run Error Handling & Edge Case tests
+pytest backend/tests/integration/test_error_handling.py -v
+
+# Run Multi-Agent Squad tests (25 tests)
+pytest backend/tests/test_multi_agent.py -v
+```
+
+---
+
+## 📊 Langfuse LLM Observability & Monitoring (Task 7)
+
+The application natively integrates with [Langfuse](https://langfuse.com) to provide full-lifecycle tracing:
+
+1. **Prompt & Generation Tracking**: Every chat turn and RAG retrieval records input prompts, output responses, model version, and token metrics.
+2. **Retrieval Spans**: Context chunks, document IDs, similarity scores, and section citations are captured as dedicated spans inside each trace.
+3. **Execution Latency**: End-to-end wall-clock time and LLM generation time are recorded in milliseconds.
+4. **Graceful Fallback**: If Langfuse credentials are not provided or `LANGFUSE_ENABLED=false`, the service operates in non-blocking no-op mode without throwing exceptions or delaying user responses.
+
+---
+
+## 🔒 Security & Guardrails
+
+- **Zero Hallucination Refusal**: Unrelated queries are strictly refused with dynamic, polite responses without fabrications.
+- **Prompt Injection Shield**: Adversarial inputs and delimiter hijacking inside documents are blocked before reaching the LLM context.
+- **PII Masking**: Customer emails, telephone numbers, and credentials are obfuscated via regex sanitizers.
+- **Session Privacy**: Conversations are isolated per user session via `X-Session-ID` header protection.

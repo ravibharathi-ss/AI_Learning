@@ -18,7 +18,8 @@ import {
   FileCheck,
   Scale,
   Menu,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 
 import { Sidebar } from './components/Sidebar';
@@ -47,6 +48,7 @@ interface Message {
   content: string;
   timestamp: string;
   sources?: Citation[];
+  execution_time?: number;
   cited_clause?: string;
   is_grounded?: boolean;
   feedback?: Feedback;
@@ -161,13 +163,28 @@ const renderInlineSpans = (text: string) => {
 
 const renderFormattedText = (rawText: string) => {
   if (!rawText) return null;
-  const rawBlocks = rawText.split(/\n\s*\n/);
+
+  // Filter out robotic prompt artifact meta-labels
+  const sanitizedText = rawText
+    .replace(/^(\*{0,2})EXECUTIVE OVERVIEW:?(\*{0,2})\s*\n*/gim, '')
+    .replace(/^(\*{0,2})STRUCTURED BULLET POINTS:?(\*{0,2})\s*\n*/gim, '')
+    .replace(/^(\*{0,2})ACTIVE DOCUMENTS:?(\*{0,2})\s*\n*/gim, '')
+    .replace(/^(\*{0,2})OPERATIVE CITATIONS:?(\*{0,2})\s*\n*/gim, '')
+    .replace(/^(\*{0,2})INQUIRY INVITATION:?(\*{0,2})\s*\n*/gim, '')
+    .trim();
+
+  const rawBlocks = sanitizedText.split(/\n\s*\n/);
 
   return (
     <div className="structured-bot-response">
       {rawBlocks.map((block, bIdx) => {
         const trimmed = block.trim();
         if (!trimmed) return null;
+
+        // Skip standalone robotic meta-header lines if present
+        if (/^\*{0,2}(EXECUTIVE OVERVIEW|STRUCTURED BULLET POINTS|ACTIVE DOCUMENTS|OPERATIVE CITATIONS|INQUIRY INVITATION):?\*{0,2}$/i.test(trimmed)) {
+          return null;
+        }
 
         if (/^#{1,3}\s+/.test(trimmed)) {
           const headerText = trimmed.replace(/^#{1,3}\s+/, '');
@@ -369,7 +386,8 @@ export default function App() {
           }
           return {
             ...m,
-            sources: Array.isArray(parsedSources) ? parsedSources : []
+            sources: Array.isArray(parsedSources) ? parsedSources : [],
+            execution_time: typeof m.execution_time === 'number' ? m.execution_time : undefined
           };
         }).filter((m: Message) => !(m.sender === 'bot' && !m.content?.trim()));
         setMessages(validMessages);
@@ -498,6 +516,8 @@ export default function App() {
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    let botMsgId = tempBotId;
+    let streamStartTime = Date.now();
 
     try {
       // 1. Post to backend to record user message & create bot message entry
@@ -515,7 +535,7 @@ export default function App() {
       const postData = await res.json();
       const realBotMsg = postData.bot_message;
       const realUserMsg = postData.user_message;
-      const botMsgId = realBotMsg?.id || tempBotId;
+      botMsgId = realBotMsg?.id || tempBotId;
 
       // Update message entries with actual DB IDs
       setMessages((prev) =>
@@ -527,6 +547,7 @@ export default function App() {
       );
 
       // 2. Stream tokens via SSE from backend /stream endpoint
+      streamStartTime = Date.now();
       const streamRes = await fetch(`${API_BASE}/conversations/${targetConvId}/messages/${botMsgId}/stream`, {
         signal: controller.signal
       });
@@ -559,6 +580,18 @@ export default function App() {
           const dataPayload = line.startsWith('data: ') ? line.slice(6) : line.slice(5);
           if (dataPayload === '[DONE]') {
             break;
+          } else if (dataPayload.startsWith('[EXECUTION_TIME]')) {
+            try {
+              const execData = JSON.parse(dataPayload.slice(16));
+              const execSec = execData.execution_time !== undefined ? execData.execution_time : execData.duration_s;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === botMsgId ? { ...m, execution_time: execSec } : m
+                )
+              );
+            } catch (err) {
+              console.error('Error parsing execution time from stream:', err);
+            }
           } else if (dataPayload.startsWith('[SOURCES]')) {
             try {
               const parsedSources = JSON.parse(dataPayload.slice(9));
@@ -627,6 +660,14 @@ export default function App() {
     } finally {
       setIsGenerating(false);
       abortControllerRef.current = null;
+      const elapsedSec = parseFloat(((Date.now() - streamStartTime) / 1000).toFixed(2));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === botMsgId && m.execution_time === undefined
+            ? { ...m, execution_time: elapsedSec }
+            : m
+        )
+      );
       if (textareaRef.current) {
         textareaRef.current.focus();
       }
@@ -1080,18 +1121,28 @@ export default function App() {
                       <div className="message-bubble-wrapper">
                         <div className={`message-bubble ${msg.sender}-bubble glassmorphic-card`}>
                           {msg.sender === 'bot' && !msg.content ? (
-                            <div style={{ minWidth: '240px' }}>
-                              <div className="thinking-indicator">
-                                <div className="thinking-dot" style={{ animationDelay: '0s' }}></div>
-                                <div className="thinking-dot" style={{ animationDelay: '0.15s' }}></div>
-                                <div className="thinking-dot" style={{ animationDelay: '0.3s' }}></div>
+                            <div className="rich-loading-container">
+                              <div className="rich-loading-header">
+                                <div className="rich-ai-badge">
+                                  <Sparkles size={13} className="sparkle-pulse" />
+                                  <span>Legal AI Synthesizer</span>
+                                </div>
+                                <div className="rich-loading-dots">
+                                  <span className="dot dot-1"></span>
+                                  <span className="dot dot-2"></span>
+                                  <span className="dot dot-3"></span>
+                                </div>
                               </div>
-                              <div className="thinking-shimmer" style={{ marginTop: '12px', height: '10px', borderRadius: '5px' }}></div>
-                              <div className="thinking-shimmer" style={{ marginTop: '8px', height: '10px', borderRadius: '5px', width: '65%' }}></div>
-                              <p style={{ fontSize: '12px', color: '#475569', marginTop: '10px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                                <Sparkles size={13} style={{ color: '#2563EB' }} />
-                                Synthesizing contract analysis...
-                              </p>
+                              <div className="rich-loading-bars">
+                                <div className="rich-bar bar-long"></div>
+                                <div className="rich-bar bar-medium"></div>
+                                <div className="rich-bar bar-short"></div>
+                              </div>
+                              <div className="rich-loading-footer">
+                                <span className="rich-loading-text">
+                                  Synthesizing contract clauses & provisions...
+                                </span>
+                              </div>
                             </div>
                           ) : (
                             <div className="message-text-content">
@@ -1141,10 +1192,20 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Timestamp */}
-                        <span className="message-timestamp">
-                          {formatTimestamp(msg.timestamp)}
-                        </span>
+                        {/* Timestamp & Execution Time */}
+                        <div className={`message-meta-footer ${msg.sender === 'user' ? 'user-meta' : 'bot-meta'}`}>
+                          <span className="message-timestamp">
+                            {formatTimestamp(msg.timestamp)}
+                          </span>
+                          {msg.sender === 'bot' && msg.execution_time !== undefined && msg.execution_time !== null && (
+                            <span className="execution-time-tag" title="Response generation execution latency">
+                              <Zap size={10} className="exec-zap-icon" />
+                              {msg.execution_time < 1 
+                                ? `${Math.round(msg.execution_time * 1000)}ms` 
+                                : `${msg.execution_time.toFixed(2)}s`}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* User Avatar: Strictly on the RIGHT for User */}

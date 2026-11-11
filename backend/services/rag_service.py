@@ -54,7 +54,14 @@ class RagService:
         tokens = [t.lower() for t in cleaned.split() if len(t) > 1]
         exact_codes = re.findall(r'\b[A-Z0-9]{2,}\-[0-9]{3,}\b|\b[A-Z]{3,}[0-9]{2,}\b|\b\d{4}\b', query, re.IGNORECASE)
         
-        stop_words = {'what', 'is', 'the', 'how', 'do', 'i', 'can', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'with', 'about', 'your', 'my', 'me', 'tell', 'show'}
+        stop_words = {
+            'what', 'is', 'the', 'how', 'do', 'i', 'can', 'a', 'an', 'to', 'for', 'of', 'in', 
+            'on', 'with', 'about', 'your', 'my', 'me', 'tell', 'show', 'who', 'where', 'when', 
+            'why', 'which', 'whom', 'whose', 'are', 'was', 'were', 'be', 'been', 'being', 
+            'have', 'has', 'had', 'having', 'make', 'us', 'we', 'they', 'them', 'he', 'she', 
+            'it', 'its', 'their', 'name', 'current', 'today', 'now', 'give', 'get', 'some', 
+            'any', 'there', 'please', 'know', 'find', 'like', 'want'
+        }
         keywords = [t for t in tokens if t not in stop_words]
 
         return {
@@ -402,14 +409,17 @@ class RagService:
         # 4. Reranking Pass
         reranked_candidates = self.rerank_chunks(query_info, rrf_candidates)
 
-        # 5. Format output (with relevance threshold check and BM25 fallback)
+        # 5. Format output (with strict relevance threshold check and BM25 fallback)
         is_code_match = len(query_info.get("exact_codes", [])) > 0
         final_results = []
         for item in reranked_candidates[:limit]:
-            # Include chunks with high semantic similarity, combined semantic+BM25, pure BM25 match (e.g. offline embedding), or exact code match
-            semantic_ok = item["semantic_score"] >= 0.45
-            hybrid_ok = (item["bm25_score"] >= 1.5 and item["semantic_score"] >= 0.30)
-            bm25_pure_ok = (item["bm25_score"] >= 1.5 and item["semantic_score"] == 0.0)
+            # Precision relevance threshold:
+            # - If zero BM25 keywords matched, semantic similarity must be high confidence (>= 0.65)
+            # - If BM25 matched keywords, combined threshold ensures high relevance (bm25 >= 1.5, sem >= 0.35)
+            # - Pure BM25 without embeddings requires strong keyword match (bm25 >= 2.0)
+            semantic_ok = item["semantic_score"] >= 0.65
+            hybrid_ok = (item["bm25_score"] >= 2.0 and item["semantic_score"] >= 0.40)
+            bm25_pure_ok = (item["bm25_score"] >= 3.0 and item["semantic_score"] == 0.0)
             if semantic_ok or hybrid_ok or bm25_pure_ok or is_code_match:
                 chunk: models.DocumentChunk = item["chunk"]
                 final_results.append({

@@ -26,6 +26,7 @@ class Message(Base):
     sender = Column(String(20), nullable=False)  # 'user' or 'bot'
     content = Column(Text, nullable=False)
     sources = Column(Text, nullable=True) # JSON-serialized list of retrieved chunks
+    execution_time = Column(Float, nullable=True) # Generation latency in seconds (e.g. 1.84)
     timestamp = Column(DateTime, default=utc_now)
 
     conversation = relationship("Conversation", back_populates="messages")
